@@ -32,27 +32,37 @@ typedef float           pl;
 
 #define DEBUG_SW    1
 
-#define HEART_RATE_MODE1             0
-#define HEART_RATE_MODE2             1
-#define HEART_RATE_MODE3             2              // nomal interval
-#define HEART_RATE_MODE4             3
-#define HEART_RATE_MODE5             4
-#define HEART_RATE_MODE_NUM          5
-#define HEART_RATE_MODE1_INTERVAL   (u4)0x000186A0  //  100ms (LSB 1us)
-#define HEART_RATE_MODE2_INTERVAL   (u4)0x00030D40  //  200ms (LSB 1us)
-#define HEART_RATE_MODE3_INTERVAL   (u4)0x0007A120  //  500ms (LSB 1us)
-#define HEART_RATE_MODE4_INTERVAL   (u4)0x000F4240  // 1000ms (LSB 1us)
-#define HEART_RATE_MODE5_INTERVAL   (u4)0x001E8480  // 2000ms (LSB 1us)
+#define HEART_RATE_BEAT_MODE1           0
+#define HEART_RATE_BEAT_MODE2           1
+#define HEART_RATE_BEAT_MODE3           2
+#define HEART_RATE_BEAT_MODE_NUM        3
+
+#define HEART_RATE_INTERVAL_MODE1       0
+#define HEART_RATE_INTERVAL_MODE2       1
+#define HEART_RATE_INTERVAL_MODE3       2               // nomal interval mode
+#define HEART_RATE_INTERVAL_MODE4       3
+#define HEART_RATE_INTERVAL_MODE5       4
+#define HEART_RATE_INTERVAL_MODE_NUM    5
+#define HEART_RATE_INTERVAL1            (u4)0x000186A0  //  100ms (LSB 1us)
+#define HEART_RATE_INTERVAL2            (u4)0x00030D40  //  200ms (LSB 1us)
+#define HEART_RATE_INTERVAL3            (u4)0x0007A120  //  500ms (LSB 1us)
+#define HEART_RATE_INTERVAL4            (u4)0x000F4240  // 1000ms (LSB 1us)
+#define HEART_RATE_INTERVAL5            (u4)0x001E8480  // 2000ms (LSB 1us)
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Const
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-const u4 cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_MODE_NUM] = {
-                                HEART_RATE_MODE1_INTERVAL, 
-                                HEART_RATE_MODE2_INTERVAL, 
-                                HEART_RATE_MODE3_INTERVAL, 
-                                HEART_RATE_MODE4_INTERVAL, 
-                                HEART_RATE_MODE5_INTERVAL};
+const u4 cu4_HEART_RATE_BEAT_ARRAY[3][2] = {
+                                {0x00000096/* 150ms */, (u4)HIGH},
+                                {0x00000032/* 50ms  */, (u4)LOW},
+                                {0x00000046/* 70ms  */, (u4)HIGH}};    
+
+const u4 cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_INTERVAL_MODE_NUM] = {
+                                HEART_RATE_INTERVAL1, 
+                                HEART_RATE_INTERVAL2, 
+                                HEART_RATE_INTERVAL3, 
+                                HEART_RATE_INTERVAL4, 
+                                HEART_RATE_INTERVAL5};
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Global variable
@@ -68,14 +78,18 @@ u4  u4s_counter;
 u4  u4s_counterOld;         // 暫定
 u4  u4s_heartRateInterval;
 u4  u4s_oldTime;
-u1  u1s_heartRateMode;
+
+// 後で減らしたい
+u1  u1s_heartRateBeatMode;
+u1  u1s_heartRateIntervalMode;
+u1  u1s_isBeat;
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Prototypes
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 void IRAM_ATTR timer_callback();
-void motorManager();
-static void changeMotorMode(u1);
+void hearRateManager();
+static void changeHeartRateInterval(u1);
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Initialize
@@ -94,15 +108,20 @@ void setup() {
     timerAlarmWrite(timer1, 1000000, true); // 1000000us = 1s
     timerAlarmEnable(timer1);    
 
-    // setting motor
+    // setting heart rate
     pinMode(MOTOR_PIN,OUTPUT);
-    u1s_heartRateMode       = (u1)HEART_RATE_MODE3;
-    u4s_heartRateInterval   = cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_MODE3];
-    u4s_oldTime             = (u4)0x00000000;
+    u1s_heartRateIntervalMode   = (u1)HEART_RATE_INTERVAL_MODE3;
+    u4s_heartRateInterval       = cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_INTERVAL_MODE3];
+    u1s_heartRateBeatMode       = (u1)HEART_RATE_BEAT_MODE1;
+    u1s_isBeat                  = true;
+    u4s_oldTime                 = (u4)0x00000000;
 
     // setting common
-    u4s_counter             = (u4)0x00000000;
-    u4s_counterOld          = (u4)0x00000000;
+    u4s_counter                 = (u4)0x00000000;
+    u4s_counterOld              = (u4)0x00000000;
+
+    // start heart rate
+    digitalWrite(MOTOR_PIN,LOW);
 }
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -110,6 +129,7 @@ void setup() {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 void loop()
 {
+    hearRateIntervalManager();
     hearRateManager();
 }
 
@@ -154,39 +174,63 @@ void hearRateManager()
         u4t_interval = (u4)0xFFFFFFFF - u4s_oldTime + u4t_nowTime + (u4)0x00000001;
     }
 
+    // Beat Mode
+    if (u1s_isBeat) {
+        if (u4t_interval > cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][2]) {
+            Serial.print("★★heartRateBeatMode=");
+            Serial.println(u1s_heartRateBeatMode);
+            u1s_heartRateBeatMode++;
+            
+            if (u1s_heartRateBeatMode < HEART_RATE_BEAT_MODE_NUM) {
+                digitalWrite(MOTOR_PIN, cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][1]);
+            } else {
+                u1s_heartRateBeatMode = HEART_RATE_BEAT_MODE1;
+                u1s_isBeat = false;
+                Serial.println("★Interval Mode へ遷移");
+            }
+            u4s_oldTime = u4t_nowTime;
+        }
+
+    // Interval Mode
+    } else {
+        if (u4t_interval > u4s_heartRateInterval) {
+            // u1t_port_val = digitalRead(MOTOR_PIN) == LOW ? HIGH : LOW;
+            // digitalWrite(MOTOR_PIN, u1t_port_val);
+            
+            digitalWrite(MOTOR_PIN, LOW);
+            u1s_isBeat = true;
+            u4s_oldTime = u4t_nowTime;
+            Serial.println("★Beat Mode へ遷移");
+        }
+    }
+}
+
+/**
+ * 
+ */
+void hearRateIntervalManager()
+{
     // TODO 暫定で 10 秒毎に MotorMode を切り替える
     //      最終的には心拍数に応じて切り替えれるようにする
     if (u4s_counter - u4s_counterOld > (u4)0x0000000A) {
-        u1s_heartRateMode = ++u1s_heartRateMode < HEART_RATE_MODE_NUM ? u1s_heartRateMode : HEART_RATE_MODE1;
-        changeHeartRateInterval(u1s_heartRateMode);
+        u1s_heartRateIntervalMode = ++u1s_heartRateIntervalMode < HEART_RATE_INTERVAL_MODE_NUM ? u1s_heartRateIntervalMode : HEART_RATE_INTERVAL_MODE1;
+        changeHeartRateInterval(u1s_heartRateIntervalMode);
         u4s_counterOld = u4s_counter;
 
         if (DEBUG_SW) {
-            Serial.println("★heartRateModee の切替");
-            Serial.print("★★heartRateModee=");
-            Serial.println(u1s_heartRateMode);
+            Serial.print("heartRateMode=");
+            Serial.println(u1s_heartRateIntervalMode);
         }
-    }
-
-    // 閾値を超えた場合、ポートの出力値を切替
-    if (u4t_interval > u4s_heartRateInterval) {
-        u1t_port_val = digitalRead(MOTOR_PIN) == LOW ? HIGH : LOW;
-        digitalWrite(MOTOR_PIN, u1t_port_val);        
-        u4s_oldTime = u4t_nowTime;
-
-        if (DEBUG_SW) {
-            Serial.println("ポート出力値切替");   
-        }
-    }
+    }    
 }
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Private method
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-static void changeHeartRateInterval(u1 u1t_heartRateMode)
+static void changeHeartRateInterval(u1 u1t_heartRateIntervalMode)
 {
-    if (u1t_heartRateMode >= HEART_RATE_MODE_NUM) {
-        u1t_heartRateMode = (u1)HEART_RATE_MODE_NUM - (u1)0x01;
+    if (u1t_heartRateIntervalMode >= HEART_RATE_INTERVAL_MODE_NUM) {
+        u1t_heartRateIntervalMode = (u1)HEART_RATE_INTERVAL_MODE_NUM - (u1)0x01;
     }
-    u4s_heartRateInterval = cu4_HEART_RATE_INTERVAL_ARRAY[u1t_heartRateMode];
+    u4s_heartRateInterval = cu4_HEART_RATE_INTERVAL_ARRAY[u1t_heartRateIntervalMode];
 }
