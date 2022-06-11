@@ -10,7 +10,14 @@
 // HeartRate Device : MAX30100      https://akizukidenshi.com/catalog/g/gM-17212/
 
 #include <Wire.h> 
+#include <SPI.h>
+#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+
 #include "MAX30100.h"   //心拍センサ用のArduinoライブラリ
+#include "secrets.h"
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // StdTypes ※後で別ファイルに定義する
@@ -177,16 +184,17 @@ void hearRateManager()
     // Beat Mode
     if (u1s_isBeat) {
         if (u4t_interval > cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][2]) {
-            Serial.print("★★heartRateBeatMode=");
-            Serial.println(u1s_heartRateBeatMode);
-            u1s_heartRateBeatMode++;
-            
+//            Serial.print("★★heartRateBeatMode=");
+//            Serial.println(u1s_heartRateBeatMode);
+
+            u1s_heartRateBeatMode++;           
             if (u1s_heartRateBeatMode < HEART_RATE_BEAT_MODE_NUM) {
                 digitalWrite(MOTOR_PIN, cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][1]);
             } else {
                 u1s_heartRateBeatMode = HEART_RATE_BEAT_MODE1;
                 u1s_isBeat = false;
-                Serial.println("★Interval Mode へ遷移");
+                
+//                Serial.println("★Interval Mode へ遷移");
             }
             u4s_oldTime = u4t_nowTime;
         }
@@ -195,33 +203,54 @@ void hearRateManager()
     } else {
         if (u4t_interval > u4s_heartRateInterval) {
             // u1t_port_val = digitalRead(MOTOR_PIN) == LOW ? HIGH : LOW;
-            // digitalWrite(MOTOR_PIN, u1t_port_val);
-            
             digitalWrite(MOTOR_PIN, LOW);
             u1s_isBeat = true;
             u4s_oldTime = u4t_nowTime;
-            Serial.println("★Beat Mode へ遷移");
+            
+//            Serial.println("★Beat Mode へ遷移");
         }
     }
 }
 
 /**
- * 
+ * 緊張度を算出
  */
 void hearRateIntervalManager()
 {
-    // TODO 暫定で 10 秒毎に MotorMode を切り替える
-    //      最終的には心拍数に応じて切り替えれるようにする
-    if (u4s_counter - u4s_counterOld > (u4)0x0000000A) {
-        u1s_heartRateIntervalMode = ++u1s_heartRateIntervalMode < HEART_RATE_INTERVAL_MODE_NUM ? u1s_heartRateIntervalMode : HEART_RATE_INTERVAL_MODE1;
-        changeHeartRateInterval(u1s_heartRateIntervalMode);
-        u4s_counterOld = u4s_counter;
-
-        if (DEBUG_SW) {
-            Serial.print("heartRateMode=");
-            Serial.println(u1s_heartRateIntervalMode);
+    // シリアル通信で受信した場合
+    if (Serial.available() > 0) {
+        
+        u4 u4t_incomingByte = Serial.read();
+        for (int i = 1; i <= Serial.available(); i++ ) {
+            Serial.read();  // dummy read
         }
-    }    
+
+        // 文字列を数値に変換
+        u4 u4t_nervousness = u4t_incomingByte - '0';
+        Serial.print("received: ");
+        Serial.println(u4t_nervousness);
+
+        // 緊張度(nervousness) から heart rate intarval を産出
+        if (u4t_nervousness < HEART_RATE_INTERVAL_MODE_NUM) {
+            u1s_heartRateIntervalMode = (u1)u4t_nervousness;
+        } else {
+            u1s_heartRateIntervalMode = (u1)HEART_RATE_INTERVAL_MODE3;
+        }
+
+        changeHeartRateInterval(u1s_heartRateIntervalMode);
+        Serial.print("heartRateIntervalMode=");
+        Serial.println(u1s_heartRateIntervalMode);
+    }
+    
+    // 暫定で 10 秒毎に heart rate interval mode を切り替える
+//    if (u4s_counter - u4s_counterOld > (u4)0x0000000A) {
+//        u1s_heartRateIntervalMode = ++u1s_heartRateIntervalMode < HEART_RATE_INTERVAL_MODE_NUM ? u1s_heartRateIntervalMode : HEART_RATE_INTERVAL_MODE1;
+//        changeHeartRateInterval(u1s_heartRateIntervalMode);
+//        u4s_counterOld = u4s_counter;
+
+//        Serial.print("heartRateIntervalMode=");
+//        Serial.println(u1s_heartRateIntervalMode);
+//    }
 }
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -229,8 +258,5 @@ void hearRateIntervalManager()
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 static void changeHeartRateInterval(u1 u1t_heartRateIntervalMode)
 {
-    if (u1t_heartRateIntervalMode >= HEART_RATE_INTERVAL_MODE_NUM) {
-        u1t_heartRateIntervalMode = (u1)HEART_RATE_INTERVAL_MODE_NUM - (u1)0x01;
-    }
     u4s_heartRateInterval = cu4_HEART_RATE_INTERVAL_ARRAY[u1t_heartRateIntervalMode];
 }
