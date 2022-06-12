@@ -94,14 +94,21 @@ u1  u1s_isBeat;
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Prototypes
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+void setup_wifi();
 void IRAM_ATTR timer_callback();
+void hearRateSendManager();
+void hearRateReceiveManager();
 void hearRateManager();
 static void changeHeartRateInterval(u1);
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Initialize
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-void setup() {
+void setup() 
+{
+    //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    //■ デバイスの設定 
+    //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     // setting debug console
     Serial.begin(115200);
 
@@ -115,8 +122,20 @@ void setup() {
     timerAlarmWrite(timer1, 1000000, true); // 1000000us = 1s
     timerAlarmEnable(timer1);    
 
-    // setting heart rate
+    // setting GPIO
     pinMode(MOTOR_PIN,OUTPUT);
+
+    // setting wifi
+    setup_wifi();
+
+    //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    //■ aws の設定 
+    //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+//    setup_awsiot();
+
+    //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+    //■ 変数の設定 
+    //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     u1s_heartRateIntervalMode   = (u1)HEART_RATE_INTERVAL_MODE3;
     u4s_heartRateInterval       = cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_INTERVAL_MODE3];
     u1s_heartRateBeatMode       = (u1)HEART_RATE_BEAT_MODE1;
@@ -131,12 +150,38 @@ void setup() {
     digitalWrite(MOTOR_PIN,LOW);
 }
 
+/**
+ * wifi の初期設定
+ */
+void setup_wifi()
+{
+    Serial.print("Connecting to ");
+    Serial.println(SSID);
+
+    // ESP32でWiFiに繋がらなくなるときのための対策
+    WiFi.disconnect(true);
+    delay(1000);
+
+    WiFi.begin(SSID, PASSWORD);
+
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+}
+
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Main loop
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 void loop()
 {
-    hearRateIntervalManager();
+    hearRateSendManager();
+    hearRateReceiveManager();
     hearRateManager();
 }
 
@@ -161,6 +206,58 @@ void IRAM_ATTR timer_callback()
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Public method
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+
+/**
+ * 心拍数の送信を制御
+ * 
+ */
+void hearRateSendManager()
+{
+    
+}
+
+/**
+ * 心拍数の受信を制御
+ */
+void hearRateReceiveManager()
+{
+    // シリアル通信で受信した場合
+    if (Serial.available() > 0) {
+        
+        u4 u4t_incomingByte = Serial.read();
+        for (int i = 1; i <= Serial.available(); i++ ) {
+            Serial.read();  // dummy read
+        }
+
+        // 文字列を数値に変換
+        u4 u4t_nervousness = u4t_incomingByte - '0';
+        Serial.print("received: ");
+        Serial.println(u4t_nervousness);
+
+        // 緊張度(nervousness) から heart rate intarval を産出
+        if (u4t_nervousness < HEART_RATE_INTERVAL_MODE_NUM) {
+            u1s_heartRateIntervalMode = (u1)u4t_nervousness;
+        } else {
+            u1s_heartRateIntervalMode = (u1)HEART_RATE_INTERVAL_MODE3;
+            Serial.print("heart rate mode is out of range !!!");
+        }
+
+        changeHeartRateInterval(u1s_heartRateIntervalMode);
+        Serial.print("heartRateIntervalMode=");
+        Serial.println(u1s_heartRateIntervalMode);
+    }
+    
+    // 暫定で 10 秒毎に heart rate interval mode を切り替える
+//    if (u4s_counter - u4s_counterOld > (u4)0x0000000A) {
+//        u1s_heartRateIntervalMode = ++u1s_heartRateIntervalMode < HEART_RATE_INTERVAL_MODE_NUM ? u1s_heartRateIntervalMode : HEART_RATE_INTERVAL_MODE1;
+//        changeHeartRateInterval(u1s_heartRateIntervalMode);
+//        u4s_counterOld = u4s_counter;
+
+//        Serial.print("heartRateIntervalMode=");
+//        Serial.println(u1s_heartRateIntervalMode);
+//    }
+}
+
 /**
  * 心拍数(モーター)を制御
  * 
@@ -212,47 +309,6 @@ void hearRateManager()
     }
 }
 
-/**
- * 緊張度を算出
- */
-void hearRateIntervalManager()
-{
-    // シリアル通信で受信した場合
-    if (Serial.available() > 0) {
-        
-        u4 u4t_incomingByte = Serial.read();
-        for (int i = 1; i <= Serial.available(); i++ ) {
-            Serial.read();  // dummy read
-        }
-
-        // 文字列を数値に変換
-        u4 u4t_nervousness = u4t_incomingByte - '0';
-        Serial.print("received: ");
-        Serial.println(u4t_nervousness);
-
-        // 緊張度(nervousness) から heart rate intarval を産出
-        if (u4t_nervousness < HEART_RATE_INTERVAL_MODE_NUM) {
-            u1s_heartRateIntervalMode = (u1)u4t_nervousness;
-        } else {
-            u1s_heartRateIntervalMode = (u1)HEART_RATE_INTERVAL_MODE3;
-        }
-
-        changeHeartRateInterval(u1s_heartRateIntervalMode);
-        Serial.print("heartRateIntervalMode=");
-        Serial.println(u1s_heartRateIntervalMode);
-    }
-    
-    // 暫定で 10 秒毎に heart rate interval mode を切り替える
-//    if (u4s_counter - u4s_counterOld > (u4)0x0000000A) {
-//        u1s_heartRateIntervalMode = ++u1s_heartRateIntervalMode < HEART_RATE_INTERVAL_MODE_NUM ? u1s_heartRateIntervalMode : HEART_RATE_INTERVAL_MODE1;
-//        changeHeartRateInterval(u1s_heartRateIntervalMode);
-//        u4s_counterOld = u4s_counter;
-
-//        Serial.print("heartRateIntervalMode=");
-//        Serial.println(u1s_heartRateIntervalMode);
-//    }
-}
-
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Private method
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -260,3 +316,7 @@ static void changeHeartRateInterval(u1 u1t_heartRateIntervalMode)
 {
     u4s_heartRateInterval = cu4_HEART_RATE_INTERVAL_ARRAY[u1t_heartRateIntervalMode];
 }
+
+// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+// Service Layer ※ここで Application と MCAL の依存関係を排除
+// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
