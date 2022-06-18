@@ -134,7 +134,7 @@ void setup()
 //    setup_awsiot();
 
     //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    //■ 変数の設定 
+    //■ 変数の初期設定
     //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     u1s_heartRateIntervalMode   = (u1)HEART_RATE_INTERVAL_MODE3;
     u4s_heartRateInterval       = cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_INTERVAL_MODE3];
@@ -280,7 +280,7 @@ void hearRateManager()
 
     // Beat Mode
     if (u1s_isBeat) {
-        if (u4t_interval > cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][2]) {
+        if (u4t_interval > cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][0]) {
 //            Serial.print("★★heartRateBeatMode=");
 //            Serial.println(u1s_heartRateBeatMode);
 
