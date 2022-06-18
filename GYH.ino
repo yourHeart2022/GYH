@@ -37,6 +37,19 @@ typedef float           pl;
 // Motor: Pin 17
 #define MOTOR_PIN   17
 
+//以下、webを参考にマクロを定義
+// Sampling is tightly related to the dynamic range of the ADC. refer to the datasheet for further info
+#define HEARTRATE_SAMPLING_RATE         MAX30100_SAMPRATE_100HZ
+
+// The LEDs currents must be set to a level that avoids clipping and maximises the dynamic range
+#define HEARTRATE_IR_LED_CURRENT        MAX30100_LED_CURR_50MA
+#define HEARTRATE_RED_LED_CURRENT       MAX30100_LED_CURR_27_1MA
+
+// The pulse width of the LEDs driving determines the resolution of the ADC (which is a Sigma-Delta).
+// set HIGHRES_MODE to true only when setting PULSE_WIDTH to MAX30100_SPC_PW_1600US_16BITS
+#define HEARTRATE_PULSE_WIDTH           MAX30100_SPC_PW_1600US_16BITS
+#define HEARTRATE_HIGHRES_MODE          true
+
 #define DEBUG_SW    1
 
 #define HEART_RATE_BEAT_MODE1           0
@@ -76,7 +89,10 @@ const u4 cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_INTERVAL_MODE_NUM] = {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 //timer
 hw_timer_t *timer0 = NULL;  
-hw_timer_t *timer1 = NULL;  
+hw_timer_t *timer1 = NULL;
+
+//heart rate (MAX30100)
+MAX30100 heartRateSensor;
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Static variable
@@ -86,6 +102,8 @@ u4  u4s_counterOld;         // 暫定
 u4  u4s_heartRateInterval;
 u4  u4s_oldTime;
 
+u1  u1s_isInitHeartRateSensor;
+
 // 後で減らしたい
 u1  u1s_heartRateBeatMode;
 u1  u1s_heartRateIntervalMode;
@@ -94,6 +112,7 @@ u1  u1s_isBeat;
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Prototypes
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+void setup_heartRateSensor();
 void setup_wifi();
 void IRAM_ATTR timer_callback();
 void hearRateSendManager();
@@ -125,8 +144,11 @@ void setup()
     // setting GPIO
     pinMode(MOTOR_PIN,OUTPUT);
 
+    // setting heart rate sensor
+    setup_heartRateSensor();
+
     // setting wifi
-    setup_wifi();
+//    setup_wifi();
 
     //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     //■ aws の設定 
@@ -149,6 +171,29 @@ void setup()
     // start heart rate
     digitalWrite(MOTOR_PIN,LOW);
 }
+
+/**
+ * heart rate sensor の初期設定
+ */
+void setup_heartRateSensor()
+{
+    if (heartRateSensor.begin()) {
+
+        heartRateSensor.setMode(MAX30100_MODE_SPO2_HR);
+        heartRateSensor.setLedsCurrent(HEARTRATE_IR_LED_CURRENT, HEARTRATE_RED_LED_CURRENT);
+        heartRateSensor.setLedsPulseWidth(HEARTRATE_PULSE_WIDTH);
+        heartRateSensor.setSamplingRate(HEARTRATE_SAMPLING_RATE);
+        heartRateSensor.setHighresModeEnabled(HEARTRATE_HIGHRES_MODE);
+        
+        u1s_isInitHeartRateSensor = true;
+        Serial.println("Heart rate sensor initialization was successful.");
+    } else {
+        
+        u1s_isInitHeartRateSensor = false;
+        Serial.println("Heart rate sensor initialization was failed.");
+    }
+}
+
 
 /**
  * wifi の初期設定
@@ -213,7 +258,22 @@ void IRAM_ATTR timer_callback()
  */
 void hearRateSendManager()
 {
-    
+    if (u1s_isInitHeartRateSensor) {
+
+        if (u4s_counter - u4s_counterOld > (u4)0x00000003) {
+            u2 u2t_ir, u2t_red;
+            heartRateSensor.update();           //update pulse oximeter
+            heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
+
+            u4s_counterOld = u4s_counter;
+
+            // TODO 常に 0 になっているため、要確認
+            Serial.print("心拍数: ");
+            Serial.print(u2t_ir);
+            Serial.print(", ");
+            Serial.println(u2t_red);
+        }
+    }
 }
 
 /**
@@ -312,8 +372,6 @@ void hearRateManager()
     // Beat Mode
     if (u1s_isBeat) {
         if (u4t_interval > cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][0]) {
-//            Serial.print("★★heartRateBeatMode=");
-//            Serial.println(u1s_heartRateBeatMode);
 
             u1s_heartRateBeatMode++;           
             if (u1s_heartRateBeatMode < HEART_RATE_BEAT_MODE_NUM) {
@@ -322,7 +380,7 @@ void hearRateManager()
                 u1s_heartRateBeatMode = HEART_RATE_BEAT_MODE1;
                 u1s_isBeat = false;
                 
-//                Serial.println("★Interval Mode へ遷移");
+                Serial.println("Beat Mode -> Interval Mode");
             }
             u4s_oldTime = u4t_nowTime;
         }
@@ -335,7 +393,7 @@ void hearRateManager()
             u1s_isBeat = true;
             u4s_oldTime = u4t_nowTime;
             
-//            Serial.println("★Beat Mode へ遷移");
+            Serial.println("Interval Mode -> Beat Mode");
         }
     }
 }
