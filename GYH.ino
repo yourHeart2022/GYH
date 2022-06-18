@@ -221,30 +221,61 @@ void hearRateSendManager()
  */
 void hearRateReceiveManager()
 {
-    // シリアル通信で受信した場合
-    if (Serial.available() > 0) {
+    if (u1s_isBeat) {
         
-        u4 u4t_incomingByte = Serial.read();
-        for (int i = 1; i <= Serial.available(); i++ ) {
-            Serial.read();  // dummy read
+        u1 u1t_receiveDataSize = Serial.available();
+
+        // シリアル通信で受信した場合
+        if (u1t_receiveDataSize > 0) {
+
+            // 先頭から 3byte 分取得し 4byte 目以降は破棄する
+            u4 u4t_incomingByte[3] = {0x00000000, 0x00000000, 0x00000000};
+            for (int i = 0; i <= u1t_receiveDataSize; i++) {
+                if (i < 3) {
+                    u4t_incomingByte[i] = Serial.read();
+                } else {
+                    Serial.read();  // dummy read
+                }
+            }
+            
+            u1 u1t_bpm = (u1)0x00;
+            for (int i = 0; i < 3; i++) {
+
+                // 文字列を数値に変換
+                u1 u1t_num = (u1)(u4t_incomingByte[i] - '0');
+
+                // 0～9 の場合
+                if (u1t_num >= 0x00 && u1t_num < 0x0A) {
+                    u1t_bpm = u1t_bpm * (u1)0x0A + u1t_num;
+                }
+            }
+            
+            Serial.print("received: ");
+            Serial.print(u1t_bpm);
+            Serial.println("(bpm)");
+
+            // 0 割り対策
+            if (u1t_bpm != 0x00) {
+                // bpm から 1回あたりの心拍の時間(ms) を取得
+                u4s_heartRateInterval = 600000 / u1t_bpm;
+            }
+
+            Serial.print("interval: ");
+            Serial.print(u4s_heartRateInterval);
+            Serial.println("(ms)");
+    
+            // bpm から heart rate intarval を算出
+//            if (u4t_nervousness < HEART_RATE_INTERVAL_MODE_NUM) {
+//                u1s_heartRateIntervalMode = (u1)u4t_nervousness;
+//            } else {
+//                u1s_heartRateIntervalMode = (u1)HEART_RATE_INTERVAL_MODE3;
+//                Serial.print("heart rate mode is out of range !!!");
+//            }
+    
+ //           changeHeartRateInterval(u1s_heartRateIntervalMode);
+ //           Serial.print("heartRateIntervalMode=");
+ //           Serial.println(u1s_heartRateIntervalMode);
         }
-
-        // 文字列を数値に変換
-        u4 u4t_nervousness = u4t_incomingByte - '0';
-        Serial.print("received: ");
-        Serial.println(u4t_nervousness);
-
-        // 緊張度(nervousness) から heart rate intarval を産出
-        if (u4t_nervousness < HEART_RATE_INTERVAL_MODE_NUM) {
-            u1s_heartRateIntervalMode = (u1)u4t_nervousness;
-        } else {
-            u1s_heartRateIntervalMode = (u1)HEART_RATE_INTERVAL_MODE3;
-            Serial.print("heart rate mode is out of range !!!");
-        }
-
-        changeHeartRateInterval(u1s_heartRateIntervalMode);
-        Serial.print("heartRateIntervalMode=");
-        Serial.println(u1s_heartRateIntervalMode);
     }
     
     // 暫定で 10 秒毎に heart rate interval mode を切り替える
