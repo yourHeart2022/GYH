@@ -16,6 +16,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
+#include "MAX30100_PulseOximeter.h"
 #include "MAX30100.h"   //心拍センサ用のArduinoライブラリ
 #include "secrets.h"
 
@@ -35,9 +36,11 @@ typedef float           pl;
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // 端子の設定
 // Motor: Pin 17
-#define MOTOR_PIN   17
+#define MOTOR_PIN       17
 
-//以下、webを参考にマクロを定義
+#define HEARTRATE_SW    1
+
+// webを参考にマクロを定義 ---------------------------------------------------------------------------------
 // Sampling is tightly related to the dynamic range of the ADC. refer to the datasheet for further info
 #define HEARTRATE_SAMPLING_RATE         MAX30100_SAMPRATE_100HZ
 
@@ -49,25 +52,12 @@ typedef float           pl;
 // set HIGHRES_MODE to true only when setting PULSE_WIDTH to MAX30100_SPC_PW_1600US_16BITS
 #define HEARTRATE_PULSE_WIDTH           MAX30100_SPC_PW_1600US_16BITS
 #define HEARTRATE_HIGHRES_MODE          true
-
-#define DEBUG_SW    1
+// ------------------------------------------------------------------------------------------------------
 
 #define HEART_RATE_BEAT_MODE1           0
 #define HEART_RATE_BEAT_MODE2           1
 #define HEART_RATE_BEAT_MODE3           2
 #define HEART_RATE_BEAT_MODE_NUM        3
-
-#define HEART_RATE_INTERVAL_MODE1       0
-#define HEART_RATE_INTERVAL_MODE2       1
-#define HEART_RATE_INTERVAL_MODE3       2               // nomal interval mode
-#define HEART_RATE_INTERVAL_MODE4       3
-#define HEART_RATE_INTERVAL_MODE5       4
-#define HEART_RATE_INTERVAL_MODE_NUM    5
-#define HEART_RATE_INTERVAL1            (u4)0x000186A0  //  100ms (LSB 1us)
-#define HEART_RATE_INTERVAL2            (u4)0x00030D40  //  200ms (LSB 1us)
-#define HEART_RATE_INTERVAL3            (u4)0x0007A120  //  500ms (LSB 1us)
-#define HEART_RATE_INTERVAL4            (u4)0x000F4240  // 1000ms (LSB 1us)
-#define HEART_RATE_INTERVAL5            (u4)0x001E8480  // 2000ms (LSB 1us)
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Const
@@ -76,13 +66,6 @@ const u4 cu4_HEART_RATE_BEAT_ARRAY[3][2] = {
                                 {0x00000096/* 150ms */, (u4)HIGH},
                                 {0x00000032/* 50ms  */, (u4)LOW},
                                 {0x00000046/* 70ms  */, (u4)HIGH}};    
-
-const u4 cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_INTERVAL_MODE_NUM] = {
-                                HEART_RATE_INTERVAL1, 
-                                HEART_RATE_INTERVAL2, 
-                                HEART_RATE_INTERVAL3, 
-                                HEART_RATE_INTERVAL4, 
-                                HEART_RATE_INTERVAL5};
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Global variable
@@ -94,6 +77,13 @@ hw_timer_t *timer1 = NULL;
 //heart rate (MAX30100)
 MAX30100 heartRateSensor;
 
+// PulseOximeter is the higher level interface to the sensor
+// it offers:
+//  * beat detection reporting
+//  * heart rate calculation
+//  * SpO2 (oxidation level) calculation
+PulseOximeter pox;
+
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Static variable
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -104,9 +94,7 @@ u4  u4s_oldTime;
 
 u1  u1s_isInitHeartRateSensor;
 
-// 後で減らしたい
 u1  u1s_heartRateBeatMode;
-u1  u1s_heartRateIntervalMode;
 u1  u1s_isBeat;
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -158,8 +146,7 @@ void setup()
     //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     //■ 変数の初期設定
     //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    u1s_heartRateIntervalMode   = (u1)HEART_RATE_INTERVAL_MODE3;
-    u4s_heartRateInterval       = cu4_HEART_RATE_INTERVAL_ARRAY[HEART_RATE_INTERVAL_MODE3];
+    u4s_heartRateInterval       = (u4)0x0007A120;           // 500ms (LSB 1us) ※ひとまず適当な値を設定
     u1s_heartRateBeatMode       = (u1)HEART_RATE_BEAT_MODE1;
     u1s_isBeat                  = true;
     u4s_oldTime                 = (u4)0x00000000;
@@ -177,20 +164,33 @@ void setup()
  */
 void setup_heartRateSensor()
 {
-    if (heartRateSensor.begin()) {
+    //
+    if (HEARTRATE_SW == 0) {
+        
+        if (heartRateSensor.begin()) {
+            heartRateSensor.setMode(MAX30100_MODE_SPO2_HR);
+            heartRateSensor.setLedsCurrent(HEARTRATE_IR_LED_CURRENT, HEARTRATE_RED_LED_CURRENT);
+            heartRateSensor.setLedsPulseWidth(HEARTRATE_PULSE_WIDTH);
+            heartRateSensor.setSamplingRate(HEARTRATE_SAMPLING_RATE);
+            heartRateSensor.setHighresModeEnabled(HEARTRATE_HIGHRES_MODE);
+            
+            u1s_isInitHeartRateSensor = true;
+            Serial.println("Heart rate sensor initialization was successful.");
+        } else {
+            
+            u1s_isInitHeartRateSensor = false;
+            Serial.println("Heart rate sensor initialization was failed.");
+        }
 
-        heartRateSensor.setMode(MAX30100_MODE_SPO2_HR);
-        heartRateSensor.setLedsCurrent(HEARTRATE_IR_LED_CURRENT, HEARTRATE_RED_LED_CURRENT);
-        heartRateSensor.setLedsPulseWidth(HEARTRATE_PULSE_WIDTH);
-        heartRateSensor.setSamplingRate(HEARTRATE_SAMPLING_RATE);
-        heartRateSensor.setHighresModeEnabled(HEARTRATE_HIGHRES_MODE);
-        
-        u1s_isInitHeartRateSensor = true;
-        Serial.println("Heart rate sensor initialization was successful.");
+    //      
     } else {
-        
-        u1s_isInitHeartRateSensor = false;
-        Serial.println("Heart rate sensor initialization was failed.");
+        if (pox.begin()) {
+            u1s_isInitHeartRateSensor = true;
+            Serial.println("Heart rate sensor initialization was successful.");
+        } else {
+            u1s_isInitHeartRateSensor = false;
+            Serial.println("Heart rate sensor initialization was failed.");
+        }
     }
 }
 
@@ -260,18 +260,36 @@ void hearRateSendManager()
 {
     if (u1s_isInitHeartRateSensor) {
 
-        if (u4s_counter - u4s_counterOld > (u4)0x00000003) {
-            u2 u2t_ir, u2t_red;
-            heartRateSensor.update();           //update pulse oximeter
-            heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
+        if (HEARTRATE_SW == 0) {
+            
+            // Make sure to call update as fast as possible
+            // (If you don't run at the fast, you will always get "0" output.)
+            heartRateSensor.update();
+            if (u4s_counter - u4s_counterOld > (u4)0x00000003) {
+                u2 u2t_ir, u2t_red;
+                heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
+                
+                Serial.print("心拍数: ");
+                Serial.print(u2t_ir);
+                Serial.print(", ");
+                Serial.println(u2t_red);
 
-            u4s_counterOld = u4s_counter;
+                u4s_counterOld = u4s_counter;
+            }
+        } else {
+            
+            // Make sure to call update as fast as possible
+            // (If you don't run at the fast, you will always get "0" output.)
+            pox.update();
+            if (u4s_counter - u4s_counterOld > (u4)0x00000003) {
+                Serial.print("Heart rate:");
+                Serial.print(pox.getHeartRate());
+                Serial.print("bpm / SpO2:");
+                Serial.print(pox.getSpO2());
+                Serial.println("%");
 
-            // TODO 常に 0 になっているため、要確認
-            Serial.print("心拍数: ");
-            Serial.print(u2t_ir);
-            Serial.print(", ");
-            Serial.println(u2t_red);
+                u4s_counterOld = u4s_counter;
+            }
         }
     }
 }
@@ -323,30 +341,8 @@ void hearRateReceiveManager()
             Serial.print("interval: ");
             Serial.print(u4s_heartRateInterval);
             Serial.println("(ms)");
-    
-            // bpm から heart rate intarval を算出
-//            if (u4t_nervousness < HEART_RATE_INTERVAL_MODE_NUM) {
-//                u1s_heartRateIntervalMode = (u1)u4t_nervousness;
-//            } else {
-//                u1s_heartRateIntervalMode = (u1)HEART_RATE_INTERVAL_MODE3;
-//                Serial.print("heart rate mode is out of range !!!");
-//            }
-    
- //           changeHeartRateInterval(u1s_heartRateIntervalMode);
- //           Serial.print("heartRateIntervalMode=");
- //           Serial.println(u1s_heartRateIntervalMode);
         }
     }
-    
-    // 暫定で 10 秒毎に heart rate interval mode を切り替える
-//    if (u4s_counter - u4s_counterOld > (u4)0x0000000A) {
-//        u1s_heartRateIntervalMode = ++u1s_heartRateIntervalMode < HEART_RATE_INTERVAL_MODE_NUM ? u1s_heartRateIntervalMode : HEART_RATE_INTERVAL_MODE1;
-//        changeHeartRateInterval(u1s_heartRateIntervalMode);
-//        u4s_counterOld = u4s_counter;
-
-//        Serial.print("heartRateIntervalMode=");
-//        Serial.println(u1s_heartRateIntervalMode);
-//    }
 }
 
 /**
@@ -380,7 +376,7 @@ void hearRateManager()
                 u1s_heartRateBeatMode = HEART_RATE_BEAT_MODE1;
                 u1s_isBeat = false;
                 
-                Serial.println("Beat Mode -> Interval Mode");
+//                Serial.println("Beat Mode -> Interval Mode");
             }
             u4s_oldTime = u4t_nowTime;
         }
@@ -393,7 +389,7 @@ void hearRateManager()
             u1s_isBeat = true;
             u4s_oldTime = u4t_nowTime;
             
-            Serial.println("Interval Mode -> Beat Mode");
+//            Serial.println("Interval Mode -> Beat Mode");
         }
     }
 }
@@ -401,10 +397,6 @@ void hearRateManager()
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Private method
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-static void changeHeartRateInterval(u1 u1t_heartRateIntervalMode)
-{
-    u4s_heartRateInterval = cu4_HEART_RATE_INTERVAL_ARRAY[u1t_heartRateIntervalMode];
-}
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Service Layer ※ここで Application と MCAL の依存関係を排除
