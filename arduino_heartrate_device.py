@@ -112,7 +112,7 @@ class hr_device():
                 data = self.target.readline()
                 # print(data)
                 data2 = data.strip().split(b",")
-                data3 = [int(data2[1]), int(data2[0])]
+                data3 = [int(data2[0]), int(data2[1])]
                 return data3
             except:
                 pass
