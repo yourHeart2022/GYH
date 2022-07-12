@@ -18,7 +18,7 @@
 
 #include "MAX30100_PulseOximeter.h"
 #include "MAX30100.h"   //心拍センサ用のArduinoライブラリ
-#include "secrets.h"
+//#include "secrets.h"
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // StdTypes ※後で別ファイルに定義する
@@ -41,7 +41,7 @@ typedef float           pl;
 // Heart Rate Device の動作モードを切り替えるスイッチ
 // 0:device が取得した センサ値(raw value) を取得する
 // 1:device で算出した bpm                を取得する
-#define HEARTRATE_ACTIVE_MODE_SW    1
+#define HEARTRATE_ACTIVE_MODE_SW    0
 
 // Heart Rate を受信する動作モードを切り替えるスイッチ
 // 0:バイナリ値で取得する
@@ -134,7 +134,7 @@ void setup()
     // setting timer1
     timer1 = timerBegin(1, 80, true);       // LSB 1us
     timerAttachInterrupt(timer1, &timer_callback, true);
-    timerAlarmWrite(timer1, 1000000, true); // 1000000us = 1s
+    timerAlarmWrite(timer1, 1000, true); // 1000000us = 1s   1msecに修正
     timerAlarmEnable(timer1);    
 
     // setting GPIO
@@ -204,27 +204,27 @@ void setup_heartRateSensor()
 /**
  * wifi の初期設定
  */
-void setup_wifi()
-{
-    Serial.print("Connecting to ");
-    Serial.println(SSID);
-
-    // ESP32でWiFiに繋がらなくなるときのための対策
-    WiFi.disconnect(true);
-    delay(1000);
-
-    WiFi.begin(SSID, PASSWORD);
-
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-
-    Serial.println("");
-    Serial.println("WiFi connected");
-    Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());
-}
+//void setup_wifi()
+//{
+//    Serial.print("Connecting to ");
+//    Serial.println(SSID);
+//
+//    // ESP32でWiFiに繋がらなくなるときのための対策
+//    WiFi.disconnect(true);
+//    delay(1000);
+//
+//    WiFi.begin(SSID, PASSWORD);
+//
+//    while (WiFi.status() != WL_CONNECTED) {
+//        delay(500);
+//        Serial.print(".");
+//    }
+//
+//    Serial.println("");
+//    Serial.println("WiFi connected");
+//    Serial.println("IP address: ");
+//    Serial.println(WiFi.localIP());
+//}
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Main loop
@@ -272,13 +272,15 @@ void hearRateSendManager()
             
             // Make sure to call update as fast as possible
             // (If you don't run at the fast, you will always get "0" output.)
-            heartRateSensor.update();
-            if (u4s_counter - u4s_heartRateSendCntOld >= (u4)0x00000005) {
+//            heartRateSensor.update();
+            if (u4s_counter - u4s_heartRateSendCntOld >= (u4)0x0000000a) {
+                heartRateSensor.update();
                 u2 u2t_ir, u2t_red;
                 heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
                 
                 Serial.print(u2t_ir);
-                Serial.print(u4s_heartRateSendRollingCnt++);
+                Serial.print(",");
+                Serial.println(u4s_heartRateSendRollingCnt++);
 
                 // ir だけ送信すればで良いためコメントアウト
 //                Serial.print(", ");
