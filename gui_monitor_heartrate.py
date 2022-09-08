@@ -4,8 +4,12 @@
     心拍数を推定して表示するプログラム
 
 Todo:
-    1. 心拍データをArduinoデバイスに送信する
-    2. measurement_processとcalc_bpm_processの関係の見直し
+    1.interact_GYH_process()関数の記述
+      心拍データの基準値から10段階化してGYHデバイスに送信する機能
+      ボタンが押されたときに、メッセージ番号を送信する機能
+      そのとき、メッセージ番号と心拍変化をログする機能
+    
+    2.心拍変動値から、メッセージをチューニングする 
 """
 import time
 import sys
@@ -21,13 +25,16 @@ import tkinter as tk
 import tkinter.font as font
 from tkinter import ttk
 from tkinter import messagebox
+from statistics import variance
+import random
 
-import arduino_heartrate_device as arduino
+import arduino_heartrate_device as GYH
 
 port_left = 'COM3'
-port_right = 'COM5'
+port_right = 'COM4'
 
-USE_SINGLE_DEVICE = True
+USE_LEFT_ONLY   = True
+BPM_CHANGE_RATE = 0.05
 
 class grabYourHeart():
     '''# class grabYourHeart
@@ -44,62 +51,67 @@ class grabYourHeart():
 
         # 測定用のパラメータ\n
         IR_SIGNAL_THRESH     , int       , [a.u.] この値以下のデータは無視する（反射光が十分な強度でないと指が接触していない）\n
-        THRESH_ERROR_COUNTUP , int       , [sec] エラーカウンタ。無視されたデータがこのカウンタ値以上ある場合は、指が離れたと仮定しデータを破棄する\n
+        ERASE_DATA_LENGTH    , int       , [sec] エラーとなるデータ数がこの値以上ある場合は、指が離れたと仮定しデータを破棄する\n
         DATA_LIST_MAX_LENGTH , int       , [sec] 収録する最大のデータ長さ。このデータリストでピークカウントを行う\n
-        FINGER_FIND_LENGTH   , int       , [sec] 収録されたデータがこの値以上の場合は、指が接触していると仮定する\n
+        FINGER_FIND_LENGTH   , int       , [sec] 収録されたデータ数がこの値以上の場合は、指が接触していると仮定し、心拍計算を行う\n
 
         # 心拍推定用のパラメータ\n
         DISTANCE             , int       , ピークとピークの距離。これ未満の距離で検出されたピークは無視する\n
         PROMINANCE_LOW       , int       , 地形突出度。この高さ以上突出しているピークを検出する\n
         DATA_LIST_CALC_LENGTH, int       , 収録されたデータがこの値以上の場合、ピークカウントを行う\n
+        STABLE_VARIANCE      , int       , 心拍データの分散がこの値未満であれば、心拍値は安定しているとみなす
 
         # 他インスタンス変数\n
         ir_data_list         , list      , 測定した光センサのIR生データを格納するリスト\n
         peaks                , list      , 生データから検出したピークのリスト\n
         bpm                  , int       , 推定した心拍値beat_per_minutes\n
         finger_find_flag     , bool      , 指が検出された時に立てるフラグ\n
+        button_push_counter  , int       , GYHデバイスのボタンが押された回数カウンタ\n
     '''
 
 
     def __init__(self, port, baud_rate = 115200, timeout = 1, debug_mode = False):
         self.port = port
-        self.myHRdevice = arduino.hr_device(port, baud_rate, debug_mode = debug_mode)
+        self.myGYHdevice = GYH.hr_device(port, baud_rate, debug_mode = debug_mode)
         
         # measurement_processメソッドのパラメータ
         self.IR_SIGNAL_THRESH     = 40000 
-        self.THRESH_ERROR_COUNTUP = 3     
+        self.ERASE_DATA_LENGTH    = 3     
         self.DATA_LIST_MAX_LENGTH = 30    
         self.FINGER_FIND_LENGTH   = 5     
 
         # calc_bpm_processメソッドのパラメータ
-        self.USE_FFT  = False
-        self.DISTANCE = 33                 
-        self.PROMINANCE_LOW = 500          
-        self.DATA_LIST_CALC_LENGTH = 10    
+        self.USE_FFT         = False
+        self.DISTANCE        = 33                 
+        self.PROMINANCE_LOW  = 500          
+        self.DATA_LIST_CALC_LENGTH = 10
+        self.STABLE_VARIANCE = 2
 
         # 他インスタンス変数
         self.ir_data_list = []
         self.peaks        = []
-        self.bpm          = None
-        self.finger_find_flag = False
-        self.beat_per_min_ave = 60
+        self.bpm          = 0
+        self.finger_find_flag    = False
+        self.bpm_stable_flag     = False
+        self.button_push_counter = 0
 
     def measurement_process(self):
         '''# measurement_process
 
-            NIRデータを取得し続ける関数、データはインスタンス変数のリストに書き込む
+            NIRデータを取得し続ける関数\n
+            取得したデータは、インスタンス変数ir_data_list(リスト)に書き込む
 
         '''
 
-        self.myHRdevice.connect()
+        self.myGYHdevice.connect()
 
-        self.myHRdevice.reset_buffer()
+        self.myGYHdevice.reset_buffer()
         # ゴミデータを捨てる
         for i in range(10):
-            self.myHRdevice.read_data()
+            self.myGYHdevice.read_data()
 
         thresh_error_counter = 0
-        thtesh_error_countup_num = self.THRESH_ERROR_COUNTUP * 100
+        erase_data_length_num = self.ERASE_DATA_LENGTH * 100
         data_list_max_length_num = self.DATA_LIST_MAX_LENGTH * 100
         finger_find_length_num   = self.FINGER_FIND_LENGTH * 100
 
@@ -108,103 +120,129 @@ class grabYourHeart():
         while True:
             # データを取得
             try:
-                data_temp = self.myHRdevice.read_data_rev1()
-            except:
-                pass
+                data_temp = self.myGYHdevice.read_data_rev1()
 
+                ir_temp = data_temp[0]
+                counter_temp = data_temp[1]
 
-            ir_temp = data_temp[0]
-            counter_temp = data_temp[1]
-
-            # 正しく反射光が得られているか、閾値で決める。閾値以上だとデータリストに格納する
-            if ir_temp > self.IR_SIGNAL_THRESH:
-
-                if counter_prev == None: # 最初のデータの時
-                    dt = 1
-                else:
-                    dt = counter_temp - counter_prev
-                               
-                # データ間隔が10msecのとき
-                if dt == 1:
-                    self.ir_data_list.append(ir_temp)
-                    thresh_error_counter = 0
-
-                # データに抜けがあるとき
-                elif dt > 2:
-                    # 線形補完したデータを追加
-                    for i in range(dt):
-                        ir_data_comp = ((ir_prev - ir_temp) / dt) * i + ir_prev
-                        self.ir_data_list.append(ir_data_comp)
-                    thresh_error_counter = 0
-                    print(self.port + ' data comp' +str(dt))
-
-                # データが更新されていないとき
-                elif dt == 0:
-                    print(self.port + ' data same')                 
-
-                ir_prev = ir_temp
-                counter_prev = counter_temp
-        
-            # 閾値以下の場合は、エラーカウンタを増やす
-            else:
-                thresh_error_counter += 1
-
-
-            # エラーカウンタが設定値を超えたら、これまでのデータを破棄し、グラフ描画を終了
-            if thresh_error_counter > thtesh_error_countup_num:
-                self.ir_data_list = []
-                counter_prev = None
-                thresh_error_counter = 0
-                print(self.port + ' no finger')
-                self.finger_find_flag = False
+                # GYHデバイス側でボタンが押されたとき(全データ最大値)
+                if ir_temp == 0xFFFF and counter_temp == 0xFFFF:
+                    self.button_push_counter += 1
                 
-            # ある長さまでデータがたまったら、グラフ描画を開始
-            if len(self.ir_data_list) == finger_find_length_num:
-                print(self.port + ' finger founded')
-                self.finger_find_flag = True
+                # 通常の処理。閾値以上の反射光の場合は、正しく測定できていると仮定しデータリストに格納する
+                elif ir_temp > self.IR_SIGNAL_THRESH:
 
-            # データ量を超えたら、一番古い値を削除していく
-            ir_data_list_amount = len(self.ir_data_list) - data_list_max_length_num
-            if ir_data_list_amount > 0:
-                for i in range(ir_data_list_amount):
-                    self.ir_data_list.pop(0)
-            else:
-                pass
+                    if counter_prev == None: # 最初のデータの時
+                        dt = 1
+                    else:
+                        dt = counter_temp - counter_prev
+                                
+                    # データ間隔が10msecのとき
+                    if dt == 1:
+                        self.ir_data_list.append(ir_temp)
+                        thresh_error_counter = 0
+
+                    # データに抜けがあるとき
+                    elif dt > 2:
+                        # 線形補完したデータを追加
+                        for i in range(dt):
+                            ir_data_comp = ((ir_prev - ir_temp) / dt) * i + ir_prev
+                            self.ir_data_list.append(ir_data_comp)
+                        thresh_error_counter = 0
+                        # print(self.port + ' data comp' +str(dt))
+
+                    # データが更新されていないとき
+                    elif dt == 0:
+                        pass
+                        # print(self.port + ' data same')                 
+
+                    ir_prev = ir_temp
+                    counter_prev = counter_temp
+            
+                # 閾値以下の場合は、エラーカウンタを増やす
+                else:
+                    thresh_error_counter += 1
+
+
+                # エラーカウンタが設定値を超えたら、指が離れたため測定できないとみなし、これまでのデータを破棄する
+                if thresh_error_counter > erase_data_length_num:
+                    self.ir_data_list = []
+                    counter_prev = None
+                    thresh_error_counter = 0
+                    print(self.port + ' no finger')
+                    self.finger_find_flag = False
+                    
+                # ある長さまでデータがたまったら、指が定位置にあり正しく測定できているとみなす
+                if len(self.ir_data_list) == finger_find_length_num:
+                    print(self.port + ' finger founded')
+                    self.finger_find_flag = True
+
+                # データ量を超えたら、一番古い値を削除していく
+                ir_data_list_amount = len(self.ir_data_list) - data_list_max_length_num
+                if ir_data_list_amount > 0:
+                    for i in range(ir_data_list_amount):
+                        self.ir_data_list.pop(0)
+                else:
+                    pass
+            
+            except Exception as e:
+                print('measurement_process: ', e)
+                # raise
 
     def calc_bpm_process(self):
         '''# calc_bpm_process
 
             インスタンス変数に格納されたNIRデータから心拍(bpm)に換算し続ける関数
+            換算したbpm値は、インスタンス変数bpmに書き込む
 
         Note:
             USE_FFTをTrueにすることで30秒以上のデータにおいて、
             フーリエ変換したグラフから心拍を算出することができる。
             が、チューニングにも依存するが、ピークカウントのほうが正確っぽい
         '''
-        data_list_calc_lemgth_num = self.DATA_LIST_CALC_LENGTH * 100
-        data_list_max_length_num = self.DATA_LIST_MAX_LENGTH * 100
         bpm_prev1 = 60
-        bmp_prev2 = 60
+        bpm_prev2 = 60
+        bpm_list = []
         
         while True:
 
             # 所定のデータ長さ以上になったらピークカウントを行う
-            if len(self.ir_data_list) > data_list_calc_lemgth_num:
+            if self.finger_find_flag:
 
                 data_tobe_processed = np.array(self.ir_data_list)
                 # ピークをカウントするライブラリを使う
                 self.peaks, _ = find_peaks(data_tobe_processed, prominence=(self.PROMINANCE_LOW, None), distance = self.DISTANCE)
 
                 data_length_sec =  round(len(self.ir_data_list) / 100)
-                beat_per_min = round((len(self.peaks)  * 60 ) / data_length_sec)
+                bpm_current = round((len(self.peaks)  * 60 ) / data_length_sec)
 
                 # 過去値を3点の平均値をbeat per minutesとして出力
+                bpm_temp = int((bpm_current + bpm_prev1 + bpm_prev2)/3)
                 bpm_prev2 = bpm_prev1
-                bpm_prev1 = beat_per_min
-                self.beat_per_min_ave = int((beat_per_min + bpm_prev1 + bpm_prev2)/3)
+                bpm_prev1 = bpm_current
+                self.bpm  = bpm_temp
 
-                # TODO: もう片方のデバイスへ、BPM値を送る
-                # self.myHRdevice.send_bpm(beat_per_min_ave)
+                # 一般的な心拍数の範囲に入っているかどうか評価
+                if bpm_temp > 40 and bpm_temp < 150:
+                    bpm_list.append(bpm_temp)
+                # bpm値が安定しているかどうか評価
+                if len(bpm_list) > 5:
+                    bpm_variance = variance(bpm_list)
+                    # print(bpm_variance)
+                    if bpm_variance < self.STABLE_VARIANCE:
+                        self.bpm_stable_flag = True
+                        # print('stable')
+                    else:
+                        self.bpm_stable_flag = False
+                        # print('unstable')
+                    bpm_list.pop(0)
+
+            else:
+                self.bpm = None
+                self.bpm_stable_flag = False
+                bpm_list = []
+                bpm_prev1 = 60
+                bpm_prev2 = 60
 
             time.sleep(1)
 
@@ -221,6 +259,93 @@ class grabYourHeart():
         thread2.setDaemon(True)
         thread1.start()
         thread2.start()
+
+def interact_GYH_process():
+    '''# interact_GYH_process
+    
+    '''
+    if USE_LEFT_ONLY:
+        bpm_base_l = None
+        button_push_counter_prev = 0
+        print('called!')
+        while True:
+
+            
+            if grabYourHeart_left.finger_find_flag:
+
+                # 初めて安定になったタイミングの処理
+                if grabYourHeart_left.bpm_stable_flag == True and bpm_base_l == None:
+                    print('first stable')
+                    bpm_base_l = grabYourHeart_left.bpm
+                    level_base = 3 # 3を基準のbpm値での基準値としている
+                    level_diff_max = 0
+
+                    # トピックの生成
+                    topic_random_list = random.sample(range(100), 100)
+                    topic = topic_random_list[0]
+                    topic_random_list.pop(0)
+                    # grabYourHeart_left.myGYHdevice.send_8bit_data(topic + 0x10)
+
+                    dict_topic_bpmlevel = {}
+
+                # 安定になった後の処理
+                if bpm_base_l != None:
+                    level_l = estimate_bpm_level(grabYourHeart_left.bpm, bpm_base_l, BPM_CHANGE_RATE)
+                    print(level_l)
+
+                    # TODO: ヒステリシスの関数を通す
+                    # grabYourHeart_left.myGYHdevice.send_8bit_data(level_l)
+
+                    # levelの変化値の評価
+                    level_diff = level_l - level_base
+                    if abs(level_diff) > abs(level_diff_max):
+                        level_diff_max = level_diff
+
+                # ボタンが押されたら
+                if grabYourHeart_left.button_push_counter != button_push_counter_prev:
+                    dict_topic_bpmlevel[str(topic)] = level_diff_max
+                    print(dict_topic_bpmlevel)
+                    # 次の話題を送信する
+                    topic = topic_random_list[0]
+                    topic_random_list.pop(0)
+                    # grabYourHeart_left.myGYHdevice.send_8bit_data(topic + 0x10)
+
+            else:
+                bpm_base_l     = None
+                # grabYourHeart_left.myGYHdevice.send_8bit_data(0)
+            time.sleep(1)
+    else:
+        time.sleep(1)
+
+def estimate_bpm_level(bpm_current, bpm_base, bpm_change_rate):
+    '''# estimate_bpm_stage
+
+        pbmの基準値からの変化率から、現在の心拍数を10段階評価する\n
+        1 : 最低\n
+        3 : 基準\n
+        10: 最高\n
+
+    Args:
+        bpm_current    , int   , 現在のbpm値
+        bpm_base       , int   , 基準のbpm値
+        bpm_change_rate, float , 評価するための基準となる変化率
+    
+    returns:
+        level  , int , 10段階評価値
+    '''
+    step_value = bpm_base * bpm_change_rate
+    
+    level  = int((bpm_current - bpm_base) // step_value )
+
+    if level > 7:
+        level = 7
+    elif level < -2:
+        level = -2
+    
+    # 基準値を3にする
+    level = level + 3
+
+    return level
 
 
 def EXIT():
@@ -275,7 +400,6 @@ def update_params(grabYourHeart, whitch):
         grabYourHeart, object  , ターゲットの心臓デバイス\n
         whitch       , String  , 'left'か'right'、GUIの左側 or 右側を指定する
     '''
-    # TODO: grabYourHeartで個別に設定する
     if whitch == 'left':
         entry_IR_SIGNAL_THRESH = entry_IR_SIGNAL_THRESH_l
         entry_DISTANCE = entry_DISTANCE_l
@@ -342,11 +466,18 @@ def fig_plot(frame):
             # カウントしたピークの描画
             ax1.plot(peak_temp, data_temp[peak_temp],"x")
         except Exception as e:
-            print(e)
+            print('fig_plot left: ', e)
 
         # bpmの表示
-        label_bpm_show_l['text'] = str(grabYourHeart_left.beat_per_min_ave)
+        label_bpm_show_l['text'] = str(grabYourHeart_left.bpm)
         label_bpm_show_r['text'] = '--'
+        label_bpm_stable_r['text'] = ''
+
+        # 心拍値が安定していれば表示する
+        if grabYourHeart_left.bpm_stable_flag == True:
+            label_bpm_stable_l['text'] = 'stable'
+        else:
+            label_bpm_stable_l['text'] = ''
 
     # 右側が見つかった時
     elif grabYourHeart_left.finger_find_flag == False and grabYourHeart_right.finger_find_flag == True:
@@ -359,11 +490,18 @@ def fig_plot(frame):
             # カウントしたピークの描画
             ax2.plot(peak_temp, data_temp[peak_temp],"x")
         except Exception as e:
-            print(e)
+            print('fig_plot right: ', e)
 
         # bpmの表示
         label_bpm_show_l['text'] = '--'
-        label_bpm_show_r['text'] = str(grabYourHeart_right.beat_per_min_ave)
+        label_bpm_show_r['text'] = str(grabYourHeart_right.bpm)
+        label_bpm_stable_l['text'] = ''
+
+        # 心拍値が安定していれば表示する
+        if grabYourHeart_right.bpm_stable_flag == True:
+            label_bpm_stable_r['text'] = 'stable'
+        else:
+            label_bpm_stable_r['text'] = ''
 
     # 両側が見つかった時
     elif grabYourHeart_left.finger_find_flag == True and grabYourHeart_right.finger_find_flag == True:
@@ -377,7 +515,7 @@ def fig_plot(frame):
             # カウントしたピークの描画
             ax1.plot(peak_temp, data_temp[peak_temp],"x")
         except Exception as e:
-            print(e)
+            print('fig_plot left: ', e)
         
         data_temp = np.array(grabYourHeart_right.ir_data_list)
         peak_temp = grabYourHeart_right.peaks
@@ -388,36 +526,30 @@ def fig_plot(frame):
             # カウントしたピークの描画
             ax2.plot(peak_temp, data_temp[peak_temp],"x")
         except Exception as e:
-            print(e)
+            print('fig_plot right: ', e)
 
         # bpmの表示
-        label_bpm_show_l['text'] = str(grabYourHeart_left.beat_per_min_ave)
-        label_bpm_show_r['text'] = str(grabYourHeart_right.beat_per_min_ave)
+        label_bpm_show_l['text'] = str(grabYourHeart_left.bpm)
+        label_bpm_show_r['text'] = str(grabYourHeart_right.bpm)
+
+        # 心拍値が安定していれば表示する
+        if grabYourHeart_left.bpm_stable_flag == True:
+            label_bpm_stable_l['text'] = 'stable'
+        else:
+            label_bpm_stable_l['text'] = ''
+
+        if grabYourHeart_right.bpm_stable_flag == True:
+            label_bpm_stable_r['text'] = 'stable'
+        else:
+            label_bpm_stable_r['text'] = ''
 
     # 指が見つかっていないときはグラフ描画しない
     else:
         label_bpm_show_l['text'] = '--'
         label_bpm_show_r['text'] = '--'
-        # ani.event_source.stop()
-    
+        label_bpm_stable_l['text'] = ''
+        label_bpm_stable_r['text'] = ''
 
-    # 
-    # if self.finger_find_flag == False:
-    #     self.ani.event_source.stop()
-    #     plt.cla()
-    # # 指が見つかった時
-    # else:
-    #     plt.cla()
-    #     data_temp = np.array(self.ir_data_list)
-    #     peak_temp = self.peaks
-
-    #     # 生データの描画
-    #     plt.plot(data_temp)
-    #     try:
-    #         # カウントしたピークの描画
-    #         plt.plot(peak_temp, data_temp[peak_temp],"x")
-    #     except Exception as e:
-    #         print(e)
 
 if __name__ == '__main__':
     ##########################################################################################
@@ -471,8 +603,10 @@ if __name__ == '__main__':
     # Labels
     label_bpm_show_title_l = tk.Label(tab1, text = 'BPM : ', font = font_highlight)
     label_bpm_show_l       = tk.Label(tab1, text = '--', font = font_highlight_MAX)
+    label_bpm_stable_l     = tk.Label(tab1, text = '', font = font.Font(size = 32, weight = 'bold'))
     label_bpm_show_title_l.place(x = 120, y = 400)
     label_bpm_show_l.place(x = 300, y = 370)
+    label_bpm_stable_l.place(x = 470, y = 410)
 
     label_IR_SIGNAL_THRESH_l = tk.Label(tab1, text = 'THRESHOLD:', font = font_highlight)
     label_DISTANCE_l         = tk.Label(tab1, text = 'DISTANCE :', font = font_highlight)
@@ -502,8 +636,10 @@ if __name__ == '__main__':
     # Labels
     label_bpm_show_title_r = tk.Label(tab1, text = 'BPM : ', font = font_highlight)
     label_bpm_show_r       = tk.Label(tab1, text = '--', font = font_highlight_MAX)
+    label_bpm_stable_r     = tk.Label(tab1, text = '', font = font.Font(size = 32, weight = 'bold'))
     label_bpm_show_title_r.place(x = 740, y = 400)
     label_bpm_show_r.place(x = 920, y = 370)
+    label_bpm_stable_r.place(x = 1090, y = 410)
 
     label_IR_SIGNAL_THRESH_r = tk.Label(tab1, text = 'THRESHOLD:', font = font_highlight)
     label_DISTANCE_r         = tk.Label(tab1, text = 'DISTANCE :', font = font_highlight)
@@ -539,13 +675,19 @@ if __name__ == '__main__':
     init_widgets(grabYourHeart_left, 'left')
     button_update_param_l.bind(sequence="<ButtonRelease>", func = lambda event, device = grabYourHeart_left, whitch = 'left' : update_params(device, whitch))
 
-    if USE_SINGLE_DEVICE:
-        grabYourHeart_right = grabYourHeart(port_right)
+    # GUI右側用のデバイスをインスタンス化し、ウィジェットを初期化する。
+    if USE_LEFT_ONLY:
+        grabYourHeart_right = grabYourHeart(port_right, debug_mode= True)
     else:
-        grabYourHeart_right = grabYourHeart(port_right, debug_mode = True)
+        grabYourHeart_right = grabYourHeart(port_right)
         grabYourHeart_right.start_threads()
     init_widgets(grabYourHeart_right, 'right')
     button_update_param_r.bind(sequence="<ButtonRelease>", func = lambda event, device = grabYourHeart_right, whitch = 'right' : update_params(device, whitch))
+
+    thread = threading.Thread(target = interact_GYH_process)
+    # デーモン化して、メイン関数終了時にスレッドも終了できるようにする
+    thread.setDaemon(True)
+    thread.start()
 
     root.mainloop()
 

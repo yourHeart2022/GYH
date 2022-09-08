@@ -8,12 +8,11 @@ import time
 class hr_device():
     '''# hr_device
 
-        M5Stack用HeartRateModule（MAX30100搭載）を制御するESP32\n
-        ファームウェアと通信するクラス
+        M5Stack用HeartRateModule（MAX30100搭載）を制御するGYHデバイスと通信するクラス
 
     Attrs:
-        port      , String  , ESP32のポート名\n
-        baud_rate , int     , ESP32とのシリアル通信ボーレート\n
+        port      , String  , GYHデバイスのポート名\n
+        baud_rate , int     , GYHデバイスとのシリアル通信ボーレート\n
 
     '''
 
@@ -74,7 +73,7 @@ class hr_device():
     def read_data(self):
         '''# read_data
 
-            ESP32から出力されるIR, Red光データを読み取る関数
+            GYHデバイスから出力されるIR, Red光データを読み取る関数
 
         Args:
             None\n
@@ -97,7 +96,7 @@ class hr_device():
     def read_data_rev1(self):
         '''# read_data
 
-            ESP32から出力されるIR, カウンタデータを読み取る関数
+            GYHデバイスから出力されるIR, カウンタデータを読み取る関数
 
         Args:
             None\n
@@ -120,7 +119,7 @@ class hr_device():
     def send_bpm(self, beat_per_min):
         '''# send_bpm
 
-            ESP32へbpm（1分間当たりの鼓動回数）を送信する関数
+            GYHデバイスへbpm（1分間当たりの鼓動回数）を送信する関数
 
         Args:
             beat_per_min, int   , 1分間当たりの鼓動回数\n
@@ -132,6 +131,24 @@ class hr_device():
             try:
                 self.target.write(bpm_tobe_send)
                 # print(bpm_tobe_send)
+            except:
+                pass
+
+    def send_8bit_data(self, data_8bit):
+        '''# send_bpm
+
+            GYHデバイスへ8ビットデータを送信する関数
+
+        Args:
+            beat_per_min, int   , 1分間当たりの鼓動回数\n
+        '''
+        data_tobe_send = [data_8bit & 0xff]
+        if self.debug_mode:
+            print('debug mode: write -> ' + str(data_tobe_send))
+        else:
+            try:
+                self.target.write(data_tobe_send)
+                # print(data_8bit)
             except:
                 pass
 
