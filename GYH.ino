@@ -15,6 +15,7 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <M5Stack.h>
 
 #include "MAX30100_PulseOximeter.h"
 #include "MAX30100.h"   //心拍センサ用のArduinoライブラリ
@@ -114,6 +115,7 @@ void IRAM_ATTR timer_callback();
 void hearRateSendManager();
 void hearRateReceiveManager();
 void hearRateManager();
+void messageManager();
 static void changeHeartRateInterval(u1);
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -139,6 +141,9 @@ void setup()
 
     // setting GPIO
     pinMode(MOTOR_PIN,OUTPUT);
+
+    // setting M5Stack
+    setup_M5Stack();
 
     // setting heart rate sensor
     setup_heartRateSensor();
@@ -166,6 +171,22 @@ void setup()
 
     // start heart rate
     digitalWrite(MOTOR_PIN,LOW);
+}
+
+/**
+ * M5Stack の初期設定
+ */
+void setup_M5Stack()
+{
+    // M5Stack オブジェクトの初期化
+    M5.begin();
+
+    //Power chipがgpio21, gpio22, I2Cにつながれたデバイスに接続される
+    //バッテリー動作の場合はこの関数を読んでください（バッテリーの電圧を調べるらしい）
+    M5.Power.begin();
+
+    M5.Lcd.setBrightness(200); //バックライトの明るさを0（消灯）～255（点灯）で制御
+    //M5.Lcd.loadFont("filename", SD); // フォント読み込み
 }
 
 /**
@@ -204,9 +225,9 @@ void setup_heartRateSensor()
 /**
  * wifi の初期設定
  */
-//void setup_wifi()
-//{
-//    Serial.print("Connecting to ");
+void setup_wifi()
+{
+    Serial.print("Connecting to ");
 //    Serial.println(SSID);
 //
 //    // ESP32でWiFiに繋がらなくなるときのための対策
@@ -220,20 +241,28 @@ void setup_heartRateSensor()
 //        Serial.print(".");
 //    }
 //
-//    Serial.println("");
-//    Serial.println("WiFi connected");
-//    Serial.println("IP address: ");
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
 //    Serial.println(WiFi.localIP());
-//}
+}
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Main loop
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 void loop()
 {
+    // 心拍数の送信
     hearRateSendManager();
+
+    // 心拍数の受信
     hearRateReceiveManager();
+
+    // 心拍数からモーターを制御
     hearRateManager();
+
+    // メッセージの制御
+    messageManager();
 }
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -423,6 +452,24 @@ void hearRateManager()
 //            Serial.println("Interval Mode -> Beat Mode");
         }
     }
+}
+
+/**
+ * 
+ */
+void messageManager() 
+{
+   M5.Lcd.fillScreen(WHITE);
+
+    // 文字描画
+    M5.Lcd.setCursor(10, 10); //文字表示の左上位置を設定
+    M5.Lcd.setTextColor(RED); //文字色設定(背景は透明)(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...)
+    M5.Lcd.setTextSize(2);//文字の大きさを設定（1～7）
+    M5.Lcd.print("Hey Guys! \n\n We have a gift for you!");
+    
+    M5.Lcd.setTextColor(RED, BLACK); //文字色設定と背景色設定(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...)
+    M5.Lcd.setCursor(10, 100); //文字表示の左上位置を設定
+    M5.Lcd.print("Hey Guys! \n\n We have a gift for you!");
 }
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
