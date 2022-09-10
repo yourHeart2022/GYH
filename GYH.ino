@@ -44,10 +44,10 @@ typedef float           pl;
 // 1:device で算出した bpm                を取得する
 #define HEARTRATE_ACTIVE_MODE_SW    0
 
-// Heart Rate を受信する動作モードを切り替えるスイッチ
+// シリアルデータの受信モードを切り替えるスイッチ
 // 0:バイナリ値で取得する
-// 1:ASCII値で取得する
-#define HEARTRATE_RECEIVE_MODE_SW   1
+// 1:ASCII値で取得する (シリアルモニタからデータを送る場合は "1" を設定する)
+#define SERIAL_RECEIVE_MODE_SW   1
 
 // HEARTRATE_ACTIVE_MODE_SW = 0 (センサ値の取得) で動作させるためのマクロを定義 -------------------------------
 // Sampling is tightly related to the dynamic range of the ADC. refer to the datasheet for further info
@@ -72,10 +72,18 @@ typedef float           pl;
 // Const
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 const u4 cu4_HEART_RATE_BEAT_ARRAY[3][2] = {
-                                {0x00000096/* 150ms */, (u4)HIGH},
-                                {0x00000032/* 50ms  */, (u4)LOW},
-                                {0x00000046/* 70ms  */, (u4)HIGH}};    
+                                {0x00000096 /* 150ms  */, (u4)HIGH},
+                                {0x00000032 /* 50ms   */, (u4)LOW},
+                                {0x00000046 /* 70ms   */, (u4)HIGH}};
 
+const u4 cu4_HEART_RATE_INTERVAL_ARRAY[16] = {
+                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
+                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
+                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
+                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
+                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
+                                0x000003E8  /* 1000ms */};
+                                
 // TODO 後で日本語に変更する
 const String HELP_MESSAGE_ARRAY[100] = {
                                 "Good luck with your date today!!!",
@@ -114,7 +122,9 @@ u4  u4s_heartRateOldTime;           // フリーランカウンタの前回値. 
 u1  u1s_isInitHeartRateSensor;      // Heart Rate Devie の初期化が成功したかどうかを保持する
 
 u1  u1s_isBeat;                     // true:beat mode, false:interval mode
-u1  u1s_heartRateBeatMode;          // u1s_isBeat = true の時の内部状態 
+u1  u1s_heartRateBeatMode;          // u1s_isBeat = true の時の内部状態
+
+u1  u1s_messageNumber;              // display に表示するメッセージ番号
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Prototypes
@@ -123,9 +133,10 @@ void setup_heartRateSensor();
 void setup_wifi();
 void IRAM_ATTR timer_callback();
 void hearRateSendManager();
-void hearRateReceiveManager();
+void serialReceiveManager();
 void hearRateManager();
 void displayManager();
+static void parseReceveData(u1);
 static void changeHeartRateInterval(u1);
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -175,6 +186,8 @@ void setup()
     u4s_heartRateOldTime        = (u4)0x00000000;
     u4s_heartRateSendCntOld     = (u4)0x00000000;
     u4s_heartRateSendRollingCnt = (u4)0x00000000;
+
+    u1s_messageNumber           = (u1)0x00;
 
     // setting common
     u4s_counter                 = (u4)0x00000000;
@@ -271,8 +284,8 @@ void loop()
     // 心拍数の送信
     hearRateSendManager();
 
-    // 心拍数の受信
-    hearRateReceiveManager();
+    // シリアルデータの受信
+    serialReceiveManager();
 
     // 心拍数からモーターを制御
     hearRateManager();
@@ -282,7 +295,7 @@ void loop()
 
         u4s_counterOld = u4s_counter;
 
-        // メッセージの制御
+        // ディスプレイの制御
         displayManager();
     }
 }
@@ -329,9 +342,9 @@ void hearRateSendManager()
                 u2 u2t_ir, u2t_red;
                 heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
                 
-                Serial.print(u2t_ir);
-                Serial.print(",");
-                Serial.println(u4s_heartRateSendRollingCnt++);
+//                Serial.print(u2t_ir);
+//                Serial.print(",");
+//                Serial.println(u4s_heartRateSendRollingCnt++);
 
                 // ir だけ送信すればで良いためコメントアウト
 //                Serial.print(", ");
@@ -360,70 +373,58 @@ void hearRateSendManager()
 }
 
 /**
- * 心拍数の受信を制御
+ * シリアルデータの受信
  */
-void hearRateReceiveManager()
+void serialReceiveManager()
 {
-    if (u1s_isBeat) {
-        
-        u1 u1t_receiveDataSize = Serial.available();
+    u1 u1t_receiveDataSize = Serial.available();
 
-        // シリアル通信で受信した場合
-        if (u1t_receiveDataSize > 0) {
+    // シリアル通信で受信した場合
+    if (u1t_receiveDataSize > 0) {
 
-            u1 u1t_bpm = (u1)0x00;
+        u1 u1t_rcvData = (u1)0x00;
 
-            // バイナリで受信する場合
-            if (HEARTRATE_RECEIVE_MODE_SW == 0) {
+        // バイナリで受信する場合
+        if (SERIAL_RECEIVE_MODE_SW == 0) {
 
-                // 先頭から 1byte 分取得し 2byte 目以降は破棄する
-                u4 u4t_incomingByte = Serial.read();
-                for (int i = 1; i <= u1t_receiveDataSize; i++) {
+            // 先頭から 1byte 分取得し 2byte 目以降は破棄する
+            u4 u4t_incomingByte = Serial.read();
+            for (int i = 1; i <= u1t_receiveDataSize; i++) {
+                Serial.read();  // dummy read
+            }
+
+            u1t_rcvData = (u1)u4t_incomingByte;
+
+        // ASCII で受信する場合 (シリアルモニタで受信する場合)
+        } else {
+
+            // 先頭から 3byte 分取得し 4byte 目以降は破棄する
+            u4 u4t_incomingByte[3] = {0x00000000, 0x00000000, 0x00000000};
+            for (int i = 0; i <= u1t_receiveDataSize; i++) {
+                if (i < 3) {
+                    u4t_incomingByte[i] = Serial.read();
+                } else {
                     Serial.read();  // dummy read
                 }
+            }
+            
+            for (int i = 0; i < 3; i++) {
 
-                u1t_bpm = (u1)u4t_incomingByte;
+                // 文字列を数値に変換
+                u1 u1t_num = (u1)(u4t_incomingByte[i] - '0');
 
-            // ASCII で受信する場合
-            } else {
-                
-                // 先頭から 3byte 分取得し 4byte 目以降は破棄する
-                u4 u4t_incomingByte[3] = {0x00000000, 0x00000000, 0x00000000};
-                for (int i = 0; i <= u1t_receiveDataSize; i++) {
-                    if (i < 3) {
-                        u4t_incomingByte[i] = Serial.read();
-                    } else {
-                        Serial.read();  // dummy read
-                    }
-                }
-                
-                u1 u1t_bpm = (u1)0x00;
-                for (int i = 0; i < 3; i++) {
-    
-                    // 文字列を数値に変換
-                    u1 u1t_num = (u1)(u4t_incomingByte[i] - '0');
-    
-                    // 0～9 の場合
-                    if (u1t_num >= 0x00 && u1t_num < 0x0A) {
-                        u1t_bpm = u1t_bpm * (u1)0x0A + u1t_num;
-                    }
+                // 0～9 の場合
+                if (u1t_num >= 0x00 && u1t_num < 0x0A) {
+                    u1t_rcvData = u1t_rcvData * (u1)0x0A + u1t_num;
                 }
             }
-                
-            Serial.print("received: ");
-            Serial.print(u1t_bpm);
-            Serial.println("(bpm)");
-
-            // 0 割り対策
-            if (u1t_bpm != 0x00) {
-                // bpm から 1回あたりの心拍の時間(ms) を取得
-                u4s_heartRateInterval = 600000 / u1t_bpm;
-            }
-
-            Serial.print("interval: ");
-            Serial.print(u4s_heartRateInterval);
-            Serial.println("(ms)");
         }
+
+        Serial.print("received: ");
+        Serial.println(u1t_rcvData);
+
+        // 受信データを解析する
+        parseReceveData(u1t_rcvData);
     }
 }
 
@@ -477,15 +478,15 @@ void hearRateManager()
 }
 
 /**
- * 
+ * ディスプレイの表示を制御する
  */
 void displayManager() 
 {
     sprite.fillScreen(BLACK);
     sprite.setCursor(10, 10);       //文字表示の左上位置を設定
     sprite.setTextSize(3);
-//    sprite.setTextColor(RED);       //文字色設定(背景は透明)(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...) 
-    sprite.print(HELP_MESSAGE_ARRAY[0]);
+    sprite.setTextColor(WHITE);     //文字色設定(背景は透明)(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...) 
+    sprite.print(HELP_MESSAGE_ARRAY[u1s_messageNumber]);
 
     sprite.pushSprite(0, 0); 
     
@@ -497,6 +498,46 @@ void displayManager()
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Private method
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+/**
+ * 受信データを解析する
+ */
+static void parseReceveData(u1 u1t_rcvData)
+{
+    // heart rate data の場合
+    if (u1t_rcvData <= 0x0F) {
+
+        // 心拍数を mode で取得する場合
+        if (true) {
+            u4s_heartRateInterval = cu4_HEART_RATE_INTERVAL_ARRAY[u1t_rcvData];
+            
+        // 心拍数を bpm で取得する場合
+        } else {
+            
+            // 0 割り対策
+            if (u1t_rcvData != 0x00) {
+                // bpm から 1回あたりの心拍の時間(ms) を取得
+                u4s_heartRateInterval = 600000 / u1t_rcvData;
+            }
+        }
+
+        Serial.print("interval: ");
+        Serial.print(u4s_heartRateInterval);
+        Serial.println("(ms)");
+
+    // message data の場合
+    } else if (u1t_rcvData <= 0xEF) {
+
+        u1s_messageNumber = u1t_rcvData - 0x10;
+
+        Serial.print("message No: ");
+        Serial.println(u1s_messageNumber);
+
+    // reserve data の場合
+    } else {
+        Serial.println("receive data");
+    }
+}
+
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Service Layer ※ここで Application と MCAL の依存関係を排除
