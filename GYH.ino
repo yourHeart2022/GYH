@@ -76,12 +76,21 @@ const u4 cu4_HEART_RATE_BEAT_ARRAY[3][2] = {
                                 {0x00000032/* 50ms  */, (u4)LOW},
                                 {0x00000046/* 70ms  */, (u4)HIGH}};    
 
+// TODO 後で日本語に変更する
+const String HELP_MESSAGE_ARRAY[100] = {
+                                "Good luck with your date today!!!",
+                                "You're in good shape!",
+                                "No worries!"};
+
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Global variable
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // timer
 hw_timer_t *timer0 = NULL;  
 hw_timer_t *timer1 = NULL;
+
+// sprite の インスタンス生成 (LCD チラつき防止)
+TFT_eSprite sprite = TFT_eSprite(&M5.Lcd);
 
 // Heart Rate Device で計測したセンサ値を格納する変数
 // ※HEARTRATE_ACTIVE_MODE_SW = 0 の時のみ値が設定される
@@ -96,6 +105,7 @@ PulseOximeter   pulseOximeter;
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // アライメントを考慮し PL → u4/s4 → u2/s2 → u1/s1 の順で定義すること
 u4  u4s_counter;                    // カウンタ値(LSB 1ms)
+u4  u4s_counterOld;                 // カウンタ値(LSB 1ms) 前回値
 u4  u4s_heartRateSendCntOld;        // Hear Rate Send で使うカウンタの前回値(LSB 1ms)
 u4  u4s_heartRateSendRollingCnt;    // Hear Rate Send で使う Rolling counter
 u4  u4s_heartRateInterval;          // u1s_isBeat = false の時の intarval 値
@@ -115,7 +125,7 @@ void IRAM_ATTR timer_callback();
 void hearRateSendManager();
 void hearRateReceiveManager();
 void hearRateManager();
-void messageManager();
+void displayManager();
 static void changeHeartRateInterval(u1);
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -136,7 +146,7 @@ void setup()
     // setting timer1
     timer1 = timerBegin(1, 80, true);       // LSB 1us
     timerAttachInterrupt(timer1, &timer_callback, true);
-    timerAlarmWrite(timer1, 1000, true); // 1000000us = 1s   1msecに修正
+    timerAlarmWrite(timer1, 1000, true); // 100us = 1ms,  1000000us = 1s
     timerAlarmEnable(timer1);    
 
     // setting GPIO
@@ -168,6 +178,7 @@ void setup()
 
     // setting common
     u4s_counter                 = (u4)0x00000000;
+    u4s_counterOld              = (u4)0x00000000;
 
     // start heart rate
     digitalWrite(MOTOR_PIN,LOW);
@@ -180,6 +191,7 @@ void setup_M5Stack()
 {
     // M5Stack オブジェクトの初期化
     M5.begin();
+    M5.Lcd.setTextSize(3);
 
     //Power chipがgpio21, gpio22, I2Cにつながれたデバイスに接続される
     //バッテリー動作の場合はこの関数を読んでください（バッテリーの電圧を調べるらしい）
@@ -187,6 +199,10 @@ void setup_M5Stack()
 
     M5.Lcd.setBrightness(200); //バックライトの明るさを0（消灯）～255（点灯）で制御
     //M5.Lcd.loadFont("filename", SD); // フォント読み込み
+
+    // スプライトの初期化
+    sprite.setColorDepth(8);    // 1:2色, 8:256色, 16:65536色
+    sprite.createSprite(M5.Lcd.width(), M5.Lcd.height());
 }
 
 /**
@@ -261,8 +277,14 @@ void loop()
     // 心拍数からモーターを制御
     hearRateManager();
 
-    // メッセージの制御
-    messageManager();
+    // 100 ms スケジューラ
+    if (u4s_counter - u4s_counterOld >= (u4)0x00000064) {
+
+        u4s_counterOld = u4s_counter;
+
+        // メッセージの制御
+        displayManager();
+    }
 }
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -457,19 +479,19 @@ void hearRateManager()
 /**
  * 
  */
-void messageManager() 
+void displayManager() 
 {
-   M5.Lcd.fillScreen(WHITE);
+    sprite.fillScreen(BLACK);
+    sprite.setCursor(10, 10);       //文字表示の左上位置を設定
+    sprite.setTextSize(3);
+//    sprite.setTextColor(RED);       //文字色設定(背景は透明)(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...) 
+    sprite.print(HELP_MESSAGE_ARRAY[0]);
 
-    // 文字描画
-    M5.Lcd.setCursor(10, 10); //文字表示の左上位置を設定
-    M5.Lcd.setTextColor(RED); //文字色設定(背景は透明)(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...)
-    M5.Lcd.setTextSize(2);//文字の大きさを設定（1～7）
-    M5.Lcd.print("Hey Guys! \n\n We have a gift for you!");
+    sprite.pushSprite(0, 0); 
     
-    M5.Lcd.setTextColor(RED, BLACK); //文字色設定と背景色設定(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...)
-    M5.Lcd.setCursor(10, 100); //文字表示の左上位置を設定
-    M5.Lcd.print("Hey Guys! \n\n We have a gift for you!");
+    // M5.Lcd.setTextColor(RED, BLACK); //文字色設定と背景色設定(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...)
+    // M5.Lcd.setCursor(10, 100); //文字表示の左上位置を設定
+    // M5.Lcd.print("Hey Guys! \n\n We have a gift for you!");
 }
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
