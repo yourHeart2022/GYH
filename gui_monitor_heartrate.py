@@ -30,11 +30,11 @@ import random
 
 import arduino_heartrate_device as GYH
 
-port_left = 'COM3'
-port_right = 'COM4'
+port_left = 'COM4'
+port_right = 'COM5'
 
 USE_LEFT_ONLY   = True
-BPM_CHANGE_RATE = 0.05
+BPM_CHANGE_RATE = 0.1 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 
 class grabYourHeart():
     '''# class grabYourHeart
@@ -54,18 +54,22 @@ class grabYourHeart():
         ERASE_DATA_LENGTH    , int       , [sec] エラーとなるデータ数がこの値以上ある場合は、指が離れたと仮定しデータを破棄する\n
         DATA_LIST_MAX_LENGTH , int       , [sec] 収録する最大のデータ長さ。このデータリストでピークカウントを行う\n
         FINGER_FIND_LENGTH   , int       , [sec] 収録されたデータ数がこの値以上の場合は、指が接触していると仮定し、心拍計算を行う\n
+        FINGER_FIND_LENGTH_PRE, int      , [sec] 収録されたデータ数がこの値以上の場合は、指が接触していると仮定し、これまでのデータを破棄する。\
+                                           指が接触してからしばらくのデータはノイズを多く含むため、破棄する必要がある。
 
         # 心拍推定用のパラメータ\n
         DISTANCE             , int       , ピークとピークの距離。これ未満の距離で検出されたピークは無視する\n
         PROMINANCE_LOW       , int       , 地形突出度。この高さ以上突出しているピークを検出する\n
         DATA_LIST_CALC_LENGTH, int       , 収録されたデータがこの値以上の場合、ピークカウントを行う\n
-        STABLE_VARIANCE      , int       , 心拍データの分散がこの値未満であれば、心拍値は安定しているとみなす
+        STABLE_VARIANCE      , int       , 心拍データの分散がこの値未満であれば、心拍値は安定しているとみなす\n
+        STABLE_JUDGE_LENGTH  , int       , [sec] 心拍計測されてからこの時間以上経過すると、心拍データの分散値を計算し、安定かどうか判断する\n
 
         # 他インスタンス変数\n
         ir_data_list         , list      , 測定した光センサのIR生データを格納するリスト\n
         peaks                , list      , 生データから検出したピークのリスト\n
         bpm                  , int       , 推定した心拍値beat_per_minutes\n
         finger_find_flag     , bool      , 指が検出された時に立てるフラグ\n
+        finger_find_pre_flag , bool      , 最初のデータはノイズを多く含むため、finger_find_flagを立てる前に、指が検出されてからデータを破棄する
         button_push_counter  , int       , GYHデバイスのボタンが押された回数カウンタ\n
     '''
 
@@ -75,23 +79,26 @@ class grabYourHeart():
         self.myGYHdevice = GYH.hr_device(port, baud_rate, debug_mode = debug_mode)
         
         # measurement_processメソッドのパラメータ
-        self.IR_SIGNAL_THRESH     = 40000 
-        self.ERASE_DATA_LENGTH    = 3     
-        self.DATA_LIST_MAX_LENGTH = 30    
-        self.FINGER_FIND_LENGTH   = 5     
+        self.IR_SIGNAL_THRESH       = 40000 
+        self.ERASE_DATA_LENGTH      = 3     
+        self.DATA_LIST_MAX_LENGTH   = 30    
+        self.FINGER_FIND_LENGTH     = 5     
+        self.FINGER_FIND_LENGTH_PRE = 3
 
         # calc_bpm_processメソッドのパラメータ
         self.USE_FFT         = False
         self.DISTANCE        = 33                 
         self.PROMINANCE_LOW  = 500          
         self.DATA_LIST_CALC_LENGTH = 10
-        self.STABLE_VARIANCE = 2
+        self.STABLE_VARIANCE     = 1.5
+        self.STABLE_JUDGE_LENGTH = 5
 
         # 他インスタンス変数
         self.ir_data_list = []
         self.peaks        = []
         self.bpm          = 0
         self.finger_find_flag    = False
+        self.finger_find_pre_flag= False
         self.bpm_stable_flag     = False
         self.button_push_counter = 0
 
@@ -111,9 +118,10 @@ class grabYourHeart():
             self.myGYHdevice.read_data()
 
         thresh_error_counter = 0
-        erase_data_length_num = self.ERASE_DATA_LENGTH * 100
-        data_list_max_length_num = self.DATA_LIST_MAX_LENGTH * 100
-        finger_find_length_num   = self.FINGER_FIND_LENGTH * 100
+        erase_data_length_num      = self.ERASE_DATA_LENGTH * 100
+        data_list_max_length_num   = self.DATA_LIST_MAX_LENGTH * 100
+        finger_find_length_num     = self.FINGER_FIND_LENGTH * 100
+        finger_find_rength_pre_num = self.FINGER_FIND_LENGTH_PRE * 100
 
         counter_prev = None
 
@@ -127,9 +135,10 @@ class grabYourHeart():
 
                 # GYHデバイス側でボタンが押されたとき(全データ最大値)
                 if ir_temp == 0xFFFF and counter_temp == 0xFFFF:
+                    print('button!')
                     self.button_push_counter += 1
                 
-                # 通常の処理。閾値以上の反射光の場合は、正しく測定できていると仮定しデータリストに格納する
+                # 反射光が閾値以上の場合は、正しく測定できていると仮定しデータリストに格納する
                 elif ir_temp > self.IR_SIGNAL_THRESH:
 
                     if counter_prev == None: # 最初のデータの時
@@ -144,6 +153,7 @@ class grabYourHeart():
 
                     # データに抜けがあるとき
                     elif dt > 2:
+                        print('comp')
                         # 線形補完したデータを追加
                         for i in range(dt):
                             ir_data_comp = ((ir_prev - ir_temp) / dt) * i + ir_prev
@@ -152,19 +162,21 @@ class grabYourHeart():
                         # print(self.port + ' data comp' +str(dt))
 
                     # データが更新されていないとき
-                    elif dt == 0:
+                    elif dt < 0:
+                        counter_prev = 0
+                    else:
                         pass
                         # print(self.port + ' data same')                 
 
                     ir_prev = ir_temp
                     counter_prev = counter_temp
             
-                # 閾値以下の場合は、エラーカウンタを増やす
+                # 反射光が閾値以下の場合は、エラーカウンタを増やす
                 else:
                     thresh_error_counter += 1
 
 
-                # エラーカウンタが設定値を超えたら、指が離れたため測定できないとみなし、これまでのデータを破棄する
+                # エラーカウンタがある長さ（erase_data_length_num）を超えたら、指が離れたため測定できないとみなし、これまでのデータを破棄する
                 if thresh_error_counter > erase_data_length_num:
                     self.ir_data_list = []
                     counter_prev = None
@@ -172,12 +184,18 @@ class grabYourHeart():
                     print(self.port + ' no finger')
                     self.finger_find_flag = False
                     
-                # ある長さまでデータがたまったら、指が定位置にあり正しく測定できているとみなす
-                if len(self.ir_data_list) == finger_find_length_num:
+                # 指が接触してからある長さ（finger_find_rength_pre_num）までデータがたまったら、ノイズが多い最初のデータは破棄する
+                if len(self.ir_data_list) == finger_find_rength_pre_num and self.finger_find_pre_flag == False:
+                    print(self.port + ' finger founded pre')
+                    self.finger_find_pre_flag = True
+                    self.ir_data_list = []
+
+                # 指が接触し、最初のデータ破棄後に、ある長さ（finger_find_length_num）までデータがたまったら、指が定位置にあり正しく測定できているとみなす
+                if len(self.ir_data_list) == finger_find_length_num and self.finger_find_pre_flag == True:
                     print(self.port + ' finger founded')
                     self.finger_find_flag = True
 
-                # データ量を超えたら、一番古い値を削除していく
+                # ある一定のデータ量（data_list_max_length_num）を超えたら、一番古い値を削除していく
                 ir_data_list_amount = len(self.ir_data_list) - data_list_max_length_num
                 if ir_data_list_amount > 0:
                     for i in range(ir_data_list_amount):
@@ -277,10 +295,10 @@ def interact_GYH_process():
                 if grabYourHeart_left.bpm_stable_flag == True and bpm_base_l == None:
                     print('first stable')
                     bpm_base_l = grabYourHeart_left.bpm
-                    level_base = 3 # 3を基準のbpm値での基準値としている
-                    level_diff_max = 0
+                    # level_base = 3 # 3を基準のbpm値での基準値としている
+                    level_max = 0
 
-                    # トピックの生成
+                    # トピックの生成（トピックはランダム）
                     topic_random_list = random.sample(range(100), 100)
                     topic = topic_random_list[0]
                     topic_random_list.pop(0)
@@ -290,25 +308,28 @@ def interact_GYH_process():
 
                 # 安定になった後の処理
                 if bpm_base_l != None:
+                    # bpm変化レベルを算出
                     level_l = estimate_bpm_level(grabYourHeart_left.bpm, bpm_base_l, BPM_CHANGE_RATE)
                     print(level_l)
 
                     # TODO: ヒステリシスの関数を通す
                     # grabYourHeart_left.myGYHdevice.send_8bit_data(level_l)
 
-                    # levelの変化値の評価
-                    level_diff = level_l - level_base
-                    if abs(level_diff) > abs(level_diff_max):
-                        level_diff_max = level_diff
+                    # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
+                    level_max = max(level_max, level_l)
 
                 # ボタンが押されたら
-                if grabYourHeart_left.button_push_counter != button_push_counter_prev:
-                    dict_topic_bpmlevel[str(topic)] = level_diff_max
-                    print(dict_topic_bpmlevel)
+                if grabYourHeart_left.button_push_counter != button_push_counter_prev and bpm_base_l != None:
+                    dict_topic_bpmlevel[str(topic)] = level_max
+                    print(dict_topic_bpmlevel) # TODO : ->これを学習データとする
+
                     # 次の話題を送信する
-                    topic = topic_random_list[0]
+                    topic = topic_random_list[0] #TODO: ランダムでなく、チューニングする
                     topic_random_list.pop(0)
+                    level_max = 0
                     # grabYourHeart_left.myGYHdevice.send_8bit_data(topic + 0x10)
+
+                button_push_counter_prev = grabYourHeart_left.button_push_counter
 
             else:
                 bpm_base_l     = None

@@ -114,7 +114,8 @@ class hr_device():
                 data3 = [int(data2[0]), int(data2[1])]
                 return data3
             except:
-                pass
+                # pass
+                print(data)
 
     def send_bpm(self, beat_per_min):
         '''# send_bpm
