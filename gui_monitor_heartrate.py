@@ -30,10 +30,10 @@ import random
 
 import arduino_heartrate_device as GYH
 
-port_left = 'COM4'
-port_right = 'COM5'
+port_left = 'COM5'
+port_right = 'COM6'
 
-USE_LEFT_ONLY   = True
+USE_LEFT_ONLY   = False
 BPM_CHANGE_RATE = 0.1 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 
 class grabYourHeart():
@@ -183,6 +183,7 @@ class grabYourHeart():
                     thresh_error_counter = 0
                     print(self.port + ' no finger')
                     self.finger_find_flag = False
+                    self.finger_find_pre_flag = False
                     
                 # 指が接触してからある長さ（finger_find_rength_pre_num）までデータがたまったら、ノイズが多い最初のデータは破棄する
                 if len(self.ir_data_list) == finger_find_rength_pre_num and self.finger_find_pre_flag == False:
@@ -278,64 +279,135 @@ class grabYourHeart():
         thread1.start()
         thread2.start()
 
+
 def interact_GYH_process():
     '''# interact_GYH_process
+
+        GYHデバイス同士の心拍交換や、\n
+        GYHデバイスからのリクエスト時に話題の送信を行う関数\n
+
+        無限ループのため、threadingで呼び出す\n
     
     '''
-    if USE_LEFT_ONLY:
-        bpm_base_l = None
-        button_push_counter_prev = 0
-        print('called!')
-        while True:
+    bpm_base_l = None
+    bpm_base_r = None
+    button_push_counter_prev_l = 0
+    button_push_counter_prev_r = 0
+    # print('called!')
+    while True:
+        
+        # ------------------------------------------------------------------------------
+        #     Left側のGYHデバイスの処理
+        # ------------------------------------------------------------------------------
+        if grabYourHeart_left.finger_find_flag:
 
-            
-            if grabYourHeart_left.finger_find_flag:
+            # 初めて安定になったタイミングの処理
+            if grabYourHeart_left.bpm_stable_flag == True and bpm_base_l == None:
+                print('@ left GYH, first stable')
+                bpm_base_l = grabYourHeart_left.bpm
+                level_max_l = 0
 
-                # 初めて安定になったタイミングの処理
-                if grabYourHeart_left.bpm_stable_flag == True and bpm_base_l == None:
-                    print('first stable')
-                    bpm_base_l = grabYourHeart_left.bpm
-                    # level_base = 3 # 3を基準のbpm値での基準値としている
-                    level_max = 0
+                # トピックの生成（トピックは現状ランダム）
+                topic_random_list_l = random.sample(range(100), 100)
+                topic_l = topic_random_list_l[0]
+                topic_random_list_l.pop(0)
+                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x10)
 
-                    # トピックの生成（トピックはランダム）
-                    topic_random_list = random.sample(range(100), 100)
-                    topic = topic_random_list[0]
-                    topic_random_list.pop(0)
-                    # grabYourHeart_left.myGYHdevice.send_8bit_data(topic + 0x10)
+                dict_topic_bpmlevel_l = {}
 
-                    dict_topic_bpmlevel = {}
+            # 安定になった後の処理
+            if bpm_base_l != None:
+                # bpm変化レベルを算出
+                # TODO: ヒステリシスの関数を通す
+                level_l = estimate_bpm_level(grabYourHeart_left.bpm, bpm_base_l, BPM_CHANGE_RATE)
+                print('@ left GYH, ', level_l)
 
-                # 安定になった後の処理
-                if bpm_base_l != None:
-                    # bpm変化レベルを算出
-                    level_l = estimate_bpm_level(grabYourHeart_left.bpm, bpm_base_l, BPM_CHANGE_RATE)
-                    print(level_l)
+                if USE_LEFT_ONLY:
+                    grabYourHeart_left.myGYHdevice.send_8bit_data(level_l)
+                # 通常は対のGYHデバイスに送信する
+                else:
+                    grabYourHeart_right.myGYHdevice.send_8bit_data(level_l)
+                
+                # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
+                level_max_l = max(level_max_l, level_l)
 
-                    # TODO: ヒステリシスの関数を通す
-                    # grabYourHeart_left.myGYHdevice.send_8bit_data(level_l)
+            # ボタンが押されたら
+            if grabYourHeart_left.button_push_counter != button_push_counter_prev_l and bpm_base_l != None:
+                dict_topic_bpmlevel_l[str(topic_l)] = level_max_l
+                print('@ left GYH, ', dict_topic_bpmlevel_l) # TODO : ->これを学習データとする
 
-                    # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
-                    level_max = max(level_max, level_l)
+                # 次の話題を送信する
+                topic_l = topic_random_list_l[0] #TODO: ランダムでなく、チューニングする
+                topic_random_list_l.pop(0)
+                level_max_l = 0
+                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x10)
 
-                # ボタンが押されたら
-                if grabYourHeart_left.button_push_counter != button_push_counter_prev and bpm_base_l != None:
-                    dict_topic_bpmlevel[str(topic)] = level_max
-                    print(dict_topic_bpmlevel) # TODO : ->これを学習データとする
+            button_push_counter_prev_l = grabYourHeart_left.button_push_counter
 
-                    # 次の話題を送信する
-                    topic = topic_random_list[0] #TODO: ランダムでなく、チューニングする
-                    topic_random_list.pop(0)
-                    level_max = 0
-                    # grabYourHeart_left.myGYHdevice.send_8bit_data(topic + 0x10)
-
-                button_push_counter_prev = grabYourHeart_left.button_push_counter
-
+        else:
+            if USE_LEFT_ONLY:
+                grabYourHeart_left.myGYHdevice.send_8bit_data(0)
+            # 通常は対のGYHデバイスに送信する
             else:
-                bpm_base_l     = None
-                # grabYourHeart_left.myGYHdevice.send_8bit_data(0)
-            time.sleep(1)
-    else:
+                grabYourHeart_right.myGYHdevice.send_8bit_data(0)
+            
+            bpm_base_l     = None
+
+        # ------------------------------------------------------------------------------
+        #     Right側のGYHデバイスの処理
+        # ------------------------------------------------------------------------------
+        if grabYourHeart_right.finger_find_flag and USE_LEFT_ONLY == False:
+
+            # 初めて安定になったタイミングの処理
+            if grabYourHeart_right.bpm_stable_flag == True and bpm_base_r == None:
+                print('@ right GYH, first stable')
+                bpm_base_r = grabYourHeart_right.bpm
+                level_max_r = 0
+
+                # トピックの生成（トピックは現状ランダム）
+                topic_random_list_r = random.sample(range(100), 100)
+                topic_r = topic_random_list_r[0]
+                topic_random_list_r.pop(0)
+                grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + 0x10)
+
+                dict_topic_bpmlevel_r = {}
+
+            # 安定になった後の処理
+            if bpm_base_r != None:
+                # bpm変化レベルを算出
+                # TODO: ヒステリシスの関数を通す
+                level_r = estimate_bpm_level(grabYourHeart_right.bpm, bpm_base_r, BPM_CHANGE_RATE)
+                print('@ right GYH, ', level_r)
+
+                # 通常は対のGYHデバイスに送信する
+                grabYourHeart_left.myGYHdevice.send_8bit_data(level_r)
+                
+                # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
+                level_max_r = max(level_max_r, level_r)
+
+            # ボタンが押されたら
+            if grabYourHeart_right.button_push_counter != button_push_counter_prev_r and bpm_base_r != None:
+                dict_topic_bpmlevel_r[str(topic_r)] = level_max_r
+                print('@ right GYH, ', dict_topic_bpmlevel_r) # TODO : ->これを学習データとする
+
+                # 次の話題を送信する
+                topic_r = topic_random_list_r[0] #TODO: ランダムでなく、チューニングする
+                topic_random_list_r.pop(0)
+                level_max_r = 0
+                grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + 0x10)
+
+            button_push_counter_prev_r = grabYourHeart_right.button_push_counter
+
+        else:
+            if USE_LEFT_ONLY:
+                pass
+            # 通常は対のGYHデバイスに送信する
+            else:
+                grabYourHeart_left.myGYHdevice.send_8bit_data(0)
+            
+            bpm_base_r     = None
+
+        # 1sec周期
         time.sleep(1)
 
 def estimate_bpm_level(bpm_current, bpm_base, bpm_change_rate):
