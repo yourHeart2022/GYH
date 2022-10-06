@@ -28,12 +28,12 @@ from tkinter import messagebox
 from statistics import variance
 import random
 
-import arduino_heartrate_device as GYH
+import control_GYH as GYH
 
-port_left = 'COM5'
-port_right = 'COM6'
+port_left = 'COM3'
+port_right = 'COM5'
 
-USE_LEFT_ONLY   = False
+USE_LEFT_ONLY   = True
 BPM_CHANGE_RATE = 0.1 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 
 class grabYourHeart():
