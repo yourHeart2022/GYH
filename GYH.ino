@@ -17,6 +17,10 @@
 #include <ArduinoJson.h>
 #include <M5Stack.h>
 
+#include "efont.h"
+#include "efontESP32.h"
+#include "efontEnableJa.h"
+
 #include "MAX30100_PulseOximeter.h"
 #include "MAX30100.h"   //心拍センサ用のArduinoライブラリ
 //#include "secrets.h"
@@ -72,17 +76,17 @@ typedef float           pl;
 // Const
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 const u4 cu4_HEART_RATE_BEAT_ARRAY[3][2] = {
-                                {0x00000096 /* 150ms  */, (u4)HIGH},
-                                {0x00000032 /* 50ms   */, (u4)LOW},
-                                {0x00000046 /* 70ms   */, (u4)HIGH}};
+                                {0x000240F0 /* 150ms  */, (u4)HIGH},
+                                {0x0000C350 /* 50ms   */, (u4)LOW},
+                                {0x00011170 /* 70ms   */, (u4)HIGH}};
 
 const u4 cu4_HEART_RATE_INTERVAL_ARRAY[16] = {
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8  /* 1000ms */};
+                                0x000F4240, /* 1000ms */  0x000CF850, /* 850ms */   0x000AAE60, /*  700ms */
+                                0x0007A120, /*  500ms */  0x00061A80, /*  400ms */  0x000493E0, /*  300ms */
+                                0x00030D40, /*  200ms */  0x000186A0, /*  100ms */  0x0000C350, /*   50ms */
+                                0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */
+                                0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */
+                                0xFFFFFFFF  /* ****ms */};
                                 
 // TODO 後で日本語に変更する
 const String HELP_MESSAGE_ARRAY[100] = {
@@ -456,10 +460,11 @@ void hearRateManager()
             if (u1s_heartRateBeatMode < HEART_RATE_BEAT_MODE_NUM) {
                 digitalWrite(MOTOR_PIN, cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][1]);
             } else {
-                u1s_heartRateBeatMode = HEART_RATE_BEAT_MODE1;
+                // InterVal Mode へ遷移するための準備
+                digitalWrite(MOTOR_PIN, LOW);
                 u1s_isBeat = false;
                 
-//                Serial.println("Beat Mode -> Interval Mode");
+                Serial.println("Beat Mode -> Interval Mode");
             }
             u4s_heartRateOldTime = u4t_nowTime;
         }
@@ -468,11 +473,14 @@ void hearRateManager()
     } else {
         if (u4t_interval > u4s_heartRateInterval) {
             // u1t_port_val = digitalRead(MOTOR_PIN) == LOW ? HIGH : LOW;
-            digitalWrite(MOTOR_PIN, LOW);
+
+            // Beat Mode へ遷移するための準備
+            u1s_heartRateBeatMode = HEART_RATE_BEAT_MODE1;
+            digitalWrite(MOTOR_PIN, cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][1]);
             u1s_isBeat = true;
             u4s_heartRateOldTime = u4t_nowTime;
             
-//            Serial.println("Interval Mode -> Beat Mode");
+            Serial.println("Interval Mode -> Beat Mode");
         }
     }
 }
