@@ -340,19 +340,25 @@ void hearRateSendManager()
             
             // Make sure to call update as fast as possible
             // (If you don't run at the fast, you will always get "0" output.)
-//            heartRateSensor.update();
-            if (u4s_counter - u4s_heartRateSendCntOld >= (u4)0x0000000a) {
-                heartRateSensor.update();
+            if (u4s_counter - u4s_heartRateSendCntOld >= (u4)0x0000000A) {
+
+                // ir と red を取得する
                 u2 u2t_ir, u2t_red;
+                
+                heartRateSensor.update();
                 heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
                 
-//                Serial.print(u2t_ir);
-//                Serial.print(",");
-//                Serial.println(u4s_heartRateSendRollingCnt++);
+                Serial.print(u2t_ir);
+                Serial.print(",");
+
+                // 1ms のカウンタ値を送信するように変更
+                // (受信側で心拍数を算出するときに使用するため)
+                // Serial.println(u4s_heartRateSendRollingCnt++);
+                Serial.println(u4s_counter++);
 
                 // ir だけ送信すればで良いためコメントアウト
-//                Serial.print(", ");
-//                Serial.println(u2t_red);
+                // Serial.print(", ");
+                // Serial.println(u2t_red);
 
                 u4s_heartRateSendCntOld = u4s_counter;
             }
