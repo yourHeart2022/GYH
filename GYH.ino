@@ -17,6 +17,10 @@
 #include <ArduinoJson.h>
 #include <M5Stack.h>
 
+#include "efont.h"
+#include "efontESP32.h"
+#include "efontEnableJa.h"
+
 #include "MAX30100_PulseOximeter.h"
 #include "MAX30100.h"   //心拍センサ用のArduinoライブラリ
 //#include "secrets.h"
@@ -47,7 +51,7 @@ typedef float           pl;
 // シリアルデータの受信モードを切り替えるスイッチ
 // 0:バイナリ値で取得する
 // 1:ASCII値で取得する (シリアルモニタからデータを送る場合は "1" を設定する)
-#define SERIAL_RECEIVE_MODE_SW   1
+#define SERIAL_RECEIVE_MODE_SW   0
 
 // HEARTRATE_ACTIVE_MODE_SW = 0 (センサ値の取得) で動作させるためのマクロを定義 -------------------------------
 // Sampling is tightly related to the dynamic range of the ADC. refer to the datasheet for further info
@@ -72,23 +76,40 @@ typedef float           pl;
 // Const
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 const u4 cu4_HEART_RATE_BEAT_ARRAY[3][2] = {
-                                {0x00000096 /* 150ms  */, (u4)HIGH},
-                                {0x00000032 /* 50ms   */, (u4)LOW},
-                                {0x00000046 /* 70ms   */, (u4)HIGH}};
+                                {0x000240F0 /* 150ms  */, (u4)HIGH},
+                                {0x0000C350 /* 50ms   */, (u4)LOW},
+                                {0x00011170 /* 70ms   */, (u4)HIGH}};
 
 const u4 cu4_HEART_RATE_INTERVAL_ARRAY[16] = {
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */  0x000003E8, /* 1000ms */
-                                0x000003E8  /* 1000ms */};
+                                0x000F4240, /* 1000ms */  0x000CF850, /* 850ms */   0x000AAE60, /*  700ms */
+                                0x0007A120, /*  500ms */  0x00061A80, /*  400ms */  0x000493E0, /*  300ms */
+                                0x00030D40, /*  200ms */  0x000186A0, /*  100ms */  0x0000C350, /*   50ms */
+                                0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */
+                                0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */
+                                0xFFFFFFFF  /* ****ms */};
                                 
-// TODO 後で日本語に変更する
-const String HELP_MESSAGE_ARRAY[100] = {
-                                "Good luck with your date today!!!",
-                                "You're in good shape!",
-                                "No worries!"};
+// const を付けると printEfont でコンパイルエラーが出るためコメントアウト
+/* const */ char* HELP_MESSAGE_ARRAY[100] = {
+                                "[スラムダンク]",     "[キングダム]",      "[レベルE]",      "[怪獣8号]",     "[葬送のフリーレン]", 
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "",
+                                "",                 "",                "",              "",             "" };
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Global variable
@@ -113,7 +134,8 @@ PulseOximeter   pulseOximeter;
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // アライメントを考慮し PL → u4/s4 → u2/s2 → u1/s1 の順で定義すること
 u4  u4s_counter;                    // カウンタ値(LSB 1ms)
-u4  u4s_counterOld;                 // カウンタ値(LSB 1ms) 前回値
+u4  u4s_counter100ms;               // 100ms  用カウンタ値
+u4  u4s_counter1000ms;              // 1000ms 用カウンタ値
 u4  u4s_heartRateSendCntOld;        // Hear Rate Send で使うカウンタの前回値(LSB 1ms)
 u4  u4s_heartRateSendRollingCnt;    // Hear Rate Send で使う Rolling counter
 u4  u4s_heartRateInterval;          // u1s_isBeat = false の時の intarval 値
@@ -124,11 +146,13 @@ u1  u1s_isInitHeartRateSensor;      // Heart Rate Devie の初期化が成功し
 u1  u1s_isBeat;                     // true:beat mode, false:interval mode
 u1  u1s_heartRateBeatMode;          // u1s_isBeat = true の時の内部状態
 
+u1  u1s_isMessageReceved;           // メッセージを受信したかどうか
 u1  u1s_messageNumber;              // display に表示するメッセージ番号
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Prototypes
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+void setup_M5Stack();
 void setup_heartRateSensor();
 void setup_wifi();
 void IRAM_ATTR timer_callback();
@@ -136,6 +160,9 @@ void hearRateSendManager();
 void serialReceiveManager();
 void hearRateManager();
 void displayManager();
+void buttonManager();
+static boolean isElapsed100ms();
+static boolean isElapsed1000ms();
 static void parseReceveData(u1);
 static void changeHeartRateInterval(u1);
 
@@ -166,6 +193,9 @@ void setup()
     // setting M5Stack
     setup_M5Stack();
 
+    // setting display
+    setup_display();
+
     // setting heart rate sensor
     setup_heartRateSensor();
 
@@ -187,11 +217,13 @@ void setup()
     u4s_heartRateSendCntOld     = (u4)0x00000000;
     u4s_heartRateSendRollingCnt = (u4)0x00000000;
 
+    u1s_isMessageReceved        = false;
     u1s_messageNumber           = (u1)0x00;
 
     // setting common
     u4s_counter                 = (u4)0x00000000;
-    u4s_counterOld              = (u4)0x00000000;
+    u4s_counter100ms            = (u4)0x00000000;
+    u4s_counter1000ms           = (u4)0x00000000;
 
     // start heart rate
     digitalWrite(MOTOR_PIN,LOW);
@@ -204,19 +236,47 @@ void setup_M5Stack()
 {
     // M5Stack オブジェクトの初期化
     M5.begin();
-    M5.Lcd.setTextSize(3);
 
     //Power chipがgpio21, gpio22, I2Cにつながれたデバイスに接続される
     //バッテリー動作の場合はこの関数を読んでください（バッテリーの電圧を調べるらしい）
     M5.Power.begin();
-
-    M5.Lcd.setBrightness(200); //バックライトの明るさを0（消灯）～255（点灯）で制御
-    //M5.Lcd.loadFont("filename", SD); // フォント読み込み
-
-    // スプライトの初期化
-    sprite.setColorDepth(8);    // 1:2色, 8:256色, 16:65536色
-    sprite.createSprite(M5.Lcd.width(), M5.Lcd.height());
 }
+
+/**
+ * ディスプレイ の初期設定
+ */
+void setup_display()
+{
+    M5.Lcd.setBrightness(200);          //バックライトの明るさを0（消灯）～255（点灯）で制御
+
+    // SD からフォントを読み込むと時間がかかるため、日本語表示は Efont のライブラリで対応する
+    // M5.Lcd.loadFont("filename", SD); // フォント読み込み
+    M5.Lcd.setTextColor(WHITE, BLACK);  //文字色設定と背景色設定(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...)
+
+    // M5.Lcd.drawRect(x, y, w, h, color)
+    M5.Lcd.drawRect(10,  10, 10, 10, RED);
+    M5.Lcd.drawRect(50,  25, 20, 20, BLUE);
+    M5.Lcd.drawRect(100, 40, 30, 30, GREEN);
+    M5.Lcd.drawRect(150, 60, 40, 40, YELLOW);
+    M5.Lcd.drawRect(200, 90, 50, 50, PURPLE);
+
+    printEfont("Power on", 30, 16*6, 1);
+    // M5.Lcd.setCursor(50, 100);
+    // M5.Lcd.setTextSize(1);
+    // M5.Lcd.print("Power on"); 
+
+    delay(1300);
+
+    M5.Lcd.clear(BLACK);
+    printEfont("今日も私を楽しませてね！", 30, 16*1, 1);
+
+
+    // スプライトは使わないように変更
+    // スプライトの初期化
+    // sprite.setColorDepth(8);    // 1:2色, 8:256色, 16:65536色
+    // sprite.createSprite(M5.Lcd.width(), M5.Lcd.height());
+}
+
 
 /**
  * heart rate sensor の初期設定
@@ -291,12 +351,18 @@ void loop()
     hearRateManager();
 
     // 100 ms スケジューラ
-    if (u4s_counter - u4s_counterOld >= (u4)0x00000064) {
-
-        u4s_counterOld = u4s_counter;
+    if (isElapsed100ms()) {
 
         // ディスプレイの制御
         displayManager();
+
+        // ボタンイベントの制御
+        buttonManager();
+    }
+
+    // 1000 ms スケジューラ
+    if (isElapsed1000ms()) {
+
     }
 }
 
@@ -334,21 +400,27 @@ void hearRateSendManager()
         // Heart Rate Device から センサ値 を取得する場合
         if (HEARTRATE_ACTIVE_MODE_SW == 0) {
             
-            // Make sure to call update as fast as possible
-            // (If you don't run at the fast, you will always get "0" output.)
-//            heartRateSensor.update();
-            if (u4s_counter - u4s_heartRateSendCntOld >= (u4)0x0000000a) {
+            if (u4s_counter - u4s_heartRateSendCntOld >= (u4)0x0000000A) {
+
+                // Make sure to call update as fast as possible
+                // (If you don't run at the fast, you will always get "0" output.)
                 heartRateSensor.update();
+
+                // ir：***** と red：***** を取得する
                 u2 u2t_ir, u2t_red;
                 heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
                 
-//                Serial.print(u2t_ir);
-//                Serial.print(",");
-//                Serial.println(u4s_heartRateSendRollingCnt++);
+                Serial.print(u2t_ir);
+                Serial.print(",");
+
+                // 1ms のカウンタ値を送信するように変更
+                // (受信側で心拍数を算出するときに使用するため)
+                // Serial.println(u4s_heartRateSendRollingCnt++);
+                Serial.println(u4s_counter);
 
                 // ir だけ送信すればで良いためコメントアウト
-//                Serial.print(", ");
-//                Serial.println(u2t_red);
+                // Serial.print(", ");
+                // Serial.println(u2t_red);
 
                 u4s_heartRateSendCntOld = u4s_counter;
             }
@@ -456,10 +528,11 @@ void hearRateManager()
             if (u1s_heartRateBeatMode < HEART_RATE_BEAT_MODE_NUM) {
                 digitalWrite(MOTOR_PIN, cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][1]);
             } else {
-                u1s_heartRateBeatMode = HEART_RATE_BEAT_MODE1;
+                // InterVal Mode へ遷移するための準備
+                digitalWrite(MOTOR_PIN, LOW);
                 u1s_isBeat = false;
                 
-//                Serial.println("Beat Mode -> Interval Mode");
+                // Serial.println("Beat Mode -> Interval Mode");
             }
             u4s_heartRateOldTime = u4t_nowTime;
         }
@@ -468,11 +541,14 @@ void hearRateManager()
     } else {
         if (u4t_interval > u4s_heartRateInterval) {
             // u1t_port_val = digitalRead(MOTOR_PIN) == LOW ? HIGH : LOW;
-            digitalWrite(MOTOR_PIN, LOW);
+
+            // Beat Mode へ遷移するための準備
+            u1s_heartRateBeatMode = HEART_RATE_BEAT_MODE1;
+            digitalWrite(MOTOR_PIN, cu4_HEART_RATE_BEAT_ARRAY[u1s_heartRateBeatMode][1]);
             u1s_isBeat = true;
             u4s_heartRateOldTime = u4t_nowTime;
             
-//            Serial.println("Interval Mode -> Beat Mode");
+            // Serial.println("Interval Mode -> Beat Mode");
         }
     }
 }
@@ -482,22 +558,102 @@ void hearRateManager()
  */
 void displayManager() 
 {
-    sprite.fillScreen(BLACK);
-    sprite.setCursor(10, 10);       //文字表示の左上位置を設定
-    sprite.setTextSize(3);
-    sprite.setTextColor(WHITE);     //文字色設定(背景は透明)(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...) 
-    sprite.print(HELP_MESSAGE_ARRAY[u1s_messageNumber]);
+    if (u1s_isMessageReceved) {
 
-    sprite.pushSprite(0, 0); 
+        M5.Lcd.clear(BLACK);
+
+        if (u1s_messageNumber < (u1)0x64) {
+            printEfont("次は", 30, 16*1, 1);
+            printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 1);
+            printEfont("の話をしたいな。", 30, 16*5, 1);
+        } else {
+            printEfont("もうアナタと話したくない (-_-メ)", 30, 16*1, 1);
+        }
+
+        u1s_isMessageReceved = false;
+    }
+    
+    // sprite.fillScreen(BLACK);
+    // sprite.setCursor(10, 10);       //文字表示の左上位置を設定
+    // sprite.setTextSize(3);
+    // sprite.setTextColor(WHITE);     //文字色設定(背景は透明)(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...) 
+    // sprite.print(HELP_MESSAGE_ARRAY[u1s_messageNumber]);
+
+    // sprite.pushSprite(0, 0); 
     
     // M5.Lcd.setTextColor(RED, BLACK); //文字色設定と背景色設定(WHITE, BLACK, RED, GREEN, BLUE, YELLOW...)
     // M5.Lcd.setCursor(10, 100); //文字表示の左上位置を設定
     // M5.Lcd.print("Hey Guys! \n\n We have a gift for you!");
 }
 
+/**
+ * ボタンイベントの制御
+ */
+void buttonManager()
+{
+    M5.update();
+
+    // ボタン A を離した時
+    if (M5.BtnA.wasReleased()) {
+    
+    // ボタン A を 1000ms 以上長押しした時
+    } else if (M5.BtnA.pressedFor(1000)) {
+
+    // ボタン B を離した時
+    } else if (M5.BtnB.wasReleased()) {
+       
+        Serial.print(0xFF);
+        Serial.print(",");
+        Serial.println(0xFF);
+        
+    // ボタン B を 1000ms 以上長押しした時
+    } else if (M5.BtnB.pressedFor(1000)) {
+
+    // ボタン C を離した時
+    } else if (M5.BtnC.wasReleased()) {
+
+        M5.Lcd.clear(BLACK);
+        
+    // ボタン C を 1000ms 以上長押しした時
+    } else if (M5.BtnC.pressedFor(1000)) {
+        
+    }
+}
+
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Private method
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+
+/**
+ * 100ms 経過したかどうかを判断する
+ */
+static boolean isElapsed100ms()
+{
+    boolean result = false;
+
+    if (u4s_counter - u4s_counter100ms >= (u4)0x00000064) {
+        u4s_counter100ms = u4s_counter;
+        result = true;
+    }
+
+    return result;
+}
+
+/**
+ * 1000ms 経過したかどうかを判断する
+ */
+static boolean isElapsed1000ms()
+{
+    boolean result = false;
+
+    if (u4s_counter - u4s_counter1000ms >= (u4)0x000003E8) {
+        u4s_counter1000ms = u4s_counter;
+        result = true;
+    }
+
+    return result;
+}
+
 /**
  * 受信データを解析する
  */
@@ -527,7 +683,8 @@ static void parseReceveData(u1 u1t_rcvData)
     // message data の場合
     } else if (u1t_rcvData <= 0xEF) {
 
-        u1s_messageNumber = u1t_rcvData - 0x10;
+        u1s_isMessageReceved = true;
+        u1s_messageNumber    = u1t_rcvData - 0x10;
 
         Serial.print("message No: ");
         Serial.println(u1s_messageNumber);
