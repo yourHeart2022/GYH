@@ -492,8 +492,8 @@ void serialReceiveManager()
             }
         }
 
-        Serial.print("received: ");
-        Serial.println(u1t_rcvData);
+        //Serial.print("received: ");
+        //Serial.println(u1t_rcvData);
 
         // 受信データを解析する
         parseReceveData(u1t_rcvData);
@@ -602,9 +602,9 @@ void buttonManager()
     // ボタン B を離した時
     } else if (M5.BtnB.wasReleased()) {
        
-        Serial.print(0xFF);
+        Serial.print(0xFFFF);
         Serial.print(",");
-        Serial.println(0xFF);
+        Serial.println(0xFFFF);
         
     // ボタン B を 1000ms 以上長押しした時
     } else if (M5.BtnB.pressedFor(1000)) {
@@ -676,9 +676,9 @@ static void parseReceveData(u1 u1t_rcvData)
             }
         }
 
-        Serial.print("interval: ");
-        Serial.print(u4s_heartRateInterval);
-        Serial.println("(ms)");
+        //Serial.print("interval: ");
+        //Serial.print(u4s_heartRateInterval);
+        //Serial.println("(ms)");
 
     // message data の場合
     } else if (u1t_rcvData <= 0xEF) {

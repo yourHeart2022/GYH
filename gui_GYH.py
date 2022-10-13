@@ -29,6 +29,7 @@ from statistics import variance
 import random
 
 import control_GYH as GYH
+import topic_generator as tpg
 
 port_left = 'COM3'
 port_right = 'COM5'
@@ -114,7 +115,7 @@ class grabYourHeart():
 
         self.myGYHdevice.reset_buffer()
         # ゴミデータを捨てる
-        for i in range(10):
+        for i in range(50):
             self.myGYHdevice.read_data()
 
         thresh_error_counter = 0
@@ -131,10 +132,10 @@ class grabYourHeart():
                 data_temp = self.myGYHdevice.read_data_rev1()
 
                 ir_temp = data_temp[0]
-                counter_temp = data_temp[1]
+                counter_temp = int(data_temp[1]/10) #data_temp[1]
 
                 # GYHデバイス側でボタンが押されたとき(全データ最大値)
-                if ir_temp == 0xFFFF and counter_temp == 0xFFFF:
+                if ir_temp == 65535 and counter_temp == 6553:#0xFFFF:
                     print('button!')
                     self.button_push_counter += 1
                 
@@ -293,6 +294,8 @@ def interact_GYH_process():
     bpm_base_r = None
     button_push_counter_prev_l = 0
     button_push_counter_prev_r = 0
+    topicgen_l = None
+    topicgen_r = None
     # print('called!')
     while True:
         
@@ -306,14 +309,18 @@ def interact_GYH_process():
                 print('@ left GYH, first stable')
                 bpm_base_l = grabYourHeart_left.bpm
                 level_max_l = 0
+                level_max_prev_l = 3
 
-                # トピックの生成（トピックは現状ランダム）
-                topic_random_list_l = random.sample(range(100), 100)
-                topic_l = topic_random_list_l[0]
-                topic_random_list_l.pop(0)
-                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x10)
-
-                dict_topic_bpmlevel_l = {}
+                # トピックの生成
+                topicgen_l = tpg.topicGenerator()
+                topic_l = topicgen_l.get_topic(0)
+                print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
+                if USE_LEFT_ONLY:
+                    grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x0F)
+                # 通常は対のGYHデバイスに送信する
+                else:
+                    grabYourHeart_right.myGYHdevice.send_8bit_data(topic_l + 0x0F)
+                time.sleep(1)
 
             # 安定になった後の処理
             if bpm_base_l != None:
@@ -330,18 +337,37 @@ def interact_GYH_process():
                 
                 # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
                 level_max_l = max(level_max_l, level_l)
+                time.sleep(1)
 
-            # ボタンが押されたら
+            # ボタンが押されたらトピックを生成する
             if grabYourHeart_left.button_push_counter != button_push_counter_prev_l and bpm_base_l != None:
-                dict_topic_bpmlevel_l[str(topic_l)] = level_max_l
-                print('@ left GYH, ', dict_topic_bpmlevel_l) # TODO : ->これを学習データとする
 
-                # 次の話題を送信する
-                topic_l = topic_random_list_l[0] #TODO: ランダムでなく、チューニングする
-                topic_random_list_l.pop(0)
-                level_max_l = 0
-                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x10)
+                # 片方だけモードの場合は、片方の心拍値から生成する
+                if USE_LEFT_ONLY:
+                    topic_l = topicgen_l.get_topic(level_max_l - level_max_prev_l)
+                    try:
+                        print('@ left GYH ', 'score_L = ', level_max_l - level_max_prev_l, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_l)])
+                
+                        grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x0F)
+                    except Exception as e:
+                        print(e)
+                    level_max_prev_l = level_max_l
+                    level_max_l = 0
 
+                # 通常は対のGYHデバイスの心拍値から推定する
+                else:
+                    if level_max_r != None and level_max_prev_r != None:
+                        topic_l = topicgen_l.get_topic(level_max_r - level_max_prev_r)
+                        try:
+                            print('@ right GYH ', 'score_R = ', level_max_r - level_max_prev_r, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_l)])
+
+                            grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x0F)
+                        except Exception as e:
+                            print(e)
+                        level_max_prev_r = level_max_r
+                        level_max_r = 0
+                time.sleep(1)
+                
             button_push_counter_prev_l = grabYourHeart_left.button_push_counter
 
         else:
@@ -351,7 +377,14 @@ def interact_GYH_process():
             else:
                 grabYourHeart_right.myGYHdevice.send_8bit_data(0)
             
-            bpm_base_l     = None
+            bpm_base_l      = None
+            level_max_l     = None
+            level_max_prev_l= None
+            
+            # インスタンスがあれば削除
+            if topicgen_l != None:
+                del topicgen_l
+                topicgen_l = None
 
         # ------------------------------------------------------------------------------
         #     Right側のGYHデバイスの処理
@@ -363,14 +396,15 @@ def interact_GYH_process():
                 print('@ right GYH, first stable')
                 bpm_base_r = grabYourHeart_right.bpm
                 level_max_r = 0
+                level_max_prev_r = 3
 
-                # トピックの生成（トピックは現状ランダム）
-                topic_random_list_r = random.sample(range(100), 100)
-                topic_r = topic_random_list_r[0]
-                topic_random_list_r.pop(0)
-                grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + 0x10)
+                # トピックの生成
+                topicgen_r = tpg.topicGenerator()
+                topic_r = topicgen_r.get_topic(0)
+                print('@ right GYH ', tpg.TOPIC_TO_NAME[str(topic_r)])
 
-                dict_topic_bpmlevel_r = {}
+                # 通常は対のGYHデバイスに送信する
+                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_r + 0x0F)
 
             # 安定になった後の処理
             if bpm_base_r != None:
@@ -385,16 +419,19 @@ def interact_GYH_process():
                 # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
                 level_max_r = max(level_max_r, level_r)
 
-            # ボタンが押されたら
+            # ボタンが押されたらトピックを生成する
             if grabYourHeart_right.button_push_counter != button_push_counter_prev_r and bpm_base_r != None:
-                dict_topic_bpmlevel_r[str(topic_r)] = level_max_r
-                print('@ right GYH, ', dict_topic_bpmlevel_r) # TODO : ->これを学習データとする
-
-                # 次の話題を送信する
-                topic_r = topic_random_list_r[0] #TODO: ランダムでなく、チューニングする
-                topic_random_list_r.pop(0)
-                level_max_r = 0
-                grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + 0x10)
+                # 通常は対のGYHデバイスの心拍値から推定する
+                if level_max_l != None and level_max_prev_l != None:
+                    topic_r = topicgen_r.get_topic(level_max_l - level_max_prev_l)
+                    try:
+                        print('@ left GYH ', 'score_L = ',level_max_l - level_max_prev_l, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_r)])
+                
+                        grabYourHeart_left.myGYHdevice.send_8bit_data(topic_r + 0x0F)
+                    except Exception as e:
+                            print(e)
+                    level_max_prev_l = level_max_l
+                    level_max_l = 0
 
             button_push_counter_prev_r = grabYourHeart_right.button_push_counter
 
@@ -405,7 +442,14 @@ def interact_GYH_process():
             else:
                 grabYourHeart_left.myGYHdevice.send_8bit_data(0)
             
-            bpm_base_r     = None
+            bpm_base_r      = None
+            level_max_r     = None
+            level_max_prev_r= None
+
+            # インスタンスがあれば削除
+            if topicgen_r != None:
+                del topicgen_r
+                topicgen_r = None
 
         # 1sec周期
         time.sleep(1)

@@ -166,7 +166,7 @@ if __name__ == '__main__':
     myHRdevice = hr_device(port, 115200)
     myHRdevice.connect()
 
-    myHRdevice.send_bpm(60)
+    myHRdevice.send_8bit_data(0x01)
 
     # # 現在の時刻でファイル名を作る
     # now = datetime.datetime.now()

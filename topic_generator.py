@@ -190,9 +190,11 @@ class topicGenerator():
             return self.topic_current
 
         except IndexError as e:
+            print('IndexError: topic_result = ', topic_result, ', topic_prev = ', self.topic_prev, ', topic_current = ', self.topic_current)
             return None
 
         except KeyError as e:
+            print('KeyError: topic_result = ', topic_result, ', topic_prev = ', self.topic_prev, ', topic_current = ', self.topic_current)
             return None
 
         except Exception as e:
