@@ -34,7 +34,8 @@ import topic_generator as tpg
 port_left = 'COM3'
 port_right = 'COM5'
 
-USE_LEFT_ONLY   = True
+LEFT_ONLY     = True
+RIGHT_OBSERV = False
 BPM_CHANGE_RATE = 0.1 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 
 class grabYourHeart():
@@ -304,46 +305,43 @@ def interact_GYH_process():
         # ------------------------------------------------------------------------------
         if grabYourHeart_left.finger_find_flag:
 
-            # 初めて安定になったタイミングの処理
+            # Left側が初めて安定になったタイミングの処理
             if grabYourHeart_left.bpm_stable_flag == True and bpm_base_l == None:
                 print('@ left GYH, first stable')
                 bpm_base_l = grabYourHeart_left.bpm
                 level_max_l = 0
                 level_max_prev_l = 3
 
-                # トピックの生成
+                # Left側の最初のトピックを生成
                 topicgen_l = tpg.topicGenerator()
                 topic_l = topicgen_l.get_topic(0)
                 print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
-                if USE_LEFT_ONLY:
-                    grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x0F)
-                # 通常は対のGYHデバイスに送信する
-                else:
-                    grabYourHeart_right.myGYHdevice.send_8bit_data(topic_l + 0x0F)
-                time.sleep(1)
+                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x0F)
 
-            # 安定になった後の処理
+            # Left側が安定になった後の心拍値の処理
             if bpm_base_l != None:
-                # bpm変化レベルを算出
+                # Left側のbpm変化レベルを算出
                 # TODO: ヒステリシスの関数を通す
                 level_l = estimate_bpm_level(grabYourHeart_left.bpm, bpm_base_l, BPM_CHANGE_RATE)
                 print('@ left GYH, ', level_l)
 
-                if USE_LEFT_ONLY:
+                # Left側だけモードときは、bpm変化レベルをLeft側に送信
+                if LEFT_ONLY:
                     grabYourHeart_left.myGYHdevice.send_8bit_data(level_l)
-                # 通常は対のGYHデバイスに送信する
+                # 通常はRightのGYHデバイスにbpm変化レベルを送信する
                 else:
                     grabYourHeart_right.myGYHdevice.send_8bit_data(level_l)
                 
                 # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
                 level_max_l = max(level_max_l, level_l)
+
                 time.sleep(1)
 
-            # ボタンが押されたらトピックを生成する
+            # Left側ボタンが押されたらLeft側トピックを生成する
             if grabYourHeart_left.button_push_counter != button_push_counter_prev_l and bpm_base_l != None:
 
-                # 片方だけモードの場合は、片方の心拍値から生成する
-                if USE_LEFT_ONLY:
+                # Left側だけモードの場合は、Left側の心拍値からLeft側トピックを生成する
+                if LEFT_ONLY:
                     topic_l = topicgen_l.get_topic(level_max_l - level_max_prev_l)
                     try:
                         print('@ left GYH ', 'score_L = ', level_max_l - level_max_prev_l, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_l)])
@@ -354,9 +352,10 @@ def interact_GYH_process():
                     level_max_prev_l = level_max_l
                     level_max_l = 0
 
-                # 通常は対のGYHデバイスの心拍値から推定する
+                # 通常はRight側GYHデバイスの心拍値からLeft側トピックを推定する
                 else:
-                    if level_max_r != None and level_max_prev_r != None:
+                    # Right側デバイスが動作している場合のみ実行
+                    if level_max_r and level_max_prev_r != None:
                         topic_l = topicgen_l.get_topic(level_max_r - level_max_prev_r)
                         try:
                             print('@ right GYH ', 'score_R = ', level_max_r - level_max_prev_r, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_l)])
@@ -371,9 +370,10 @@ def interact_GYH_process():
             button_push_counter_prev_l = grabYourHeart_left.button_push_counter
 
         else:
-            if USE_LEFT_ONLY:
+            # 手が見つかっていないことをGYHデバイスに知らせる
+            if LEFT_ONLY:
                 grabYourHeart_left.myGYHdevice.send_8bit_data(0)
-            # 通常は対のGYHデバイスに送信する
+            # 通常はRight側のGYHデバイスに送信する
             else:
                 grabYourHeart_right.myGYHdevice.send_8bit_data(0)
             
@@ -389,45 +389,49 @@ def interact_GYH_process():
         # ------------------------------------------------------------------------------
         #     Right側のGYHデバイスの処理
         # ------------------------------------------------------------------------------
-        if grabYourHeart_right.finger_find_flag and USE_LEFT_ONLY == False:
+        if grabYourHeart_right.finger_find_flag and LEFT_ONLY == False:
 
-            # 初めて安定になったタイミングの処理
+            # Rightg側が初めて安定になったタイミングの処理
             if grabYourHeart_right.bpm_stable_flag == True and bpm_base_r == None:
                 print('@ right GYH, first stable')
                 bpm_base_r = grabYourHeart_right.bpm
                 level_max_r = 0
                 level_max_prev_r = 3
 
-                # トピックの生成
-                topicgen_r = tpg.topicGenerator()
-                topic_r = topicgen_r.get_topic(0)
-                print('@ right GYH ', tpg.TOPIC_TO_NAME[str(topic_r)])
+                # Rightg側の最初のトピックを生成, 観察者モードでないとき
+                if RIGHT_OBSERV == False:
+                    topicgen_r = tpg.topicGenerator()
+                    topic_r = topicgen_r.get_topic(0)
+                    print('@ right GYH ', tpg.TOPIC_TO_NAME[str(topic_r)])
+                    grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + 0x0F)
+                # 観察者モードのとき
+                else:
+                    pass
 
-                # 通常は対のGYHデバイスに送信する
-                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_r + 0x0F)
-
-            # 安定になった後の処理
+            # Rightg側が安定になった後の心拍値の処理
             if bpm_base_r != None:
-                # bpm変化レベルを算出
+                # Rightg側のbpm変化レベルを算出
                 # TODO: ヒステリシスの関数を通す
                 level_r = estimate_bpm_level(grabYourHeart_right.bpm, bpm_base_r, BPM_CHANGE_RATE)
                 print('@ right GYH, ', level_r)
 
-                # 通常は対のGYHデバイスに送信する
+                # 通常はLeft側のGYHデバイスにbpm変化レベル送信する
                 grabYourHeart_left.myGYHdevice.send_8bit_data(level_r)
                 
                 # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
                 level_max_r = max(level_max_r, level_r)
 
-            # ボタンが押されたらトピックを生成する
+                time.sleep(1)
+
+            # Rightg側ボタンが押されたらRight側トピックを生成する
             if grabYourHeart_right.button_push_counter != button_push_counter_prev_r and bpm_base_r != None:
-                # 通常は対のGYHデバイスの心拍値から推定する
-                if level_max_l != None and level_max_prev_l != None:
+                # 通常はLeft側GYHデバイスの心拍値から推定する, 観察者モードでないとき
+                if level_max_l and level_max_prev_l != None and RIGHT_OBSERV == False:
                     topic_r = topicgen_r.get_topic(level_max_l - level_max_prev_l)
                     try:
                         print('@ left GYH ', 'score_L = ',level_max_l - level_max_prev_l, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_r)])
                 
-                        grabYourHeart_left.myGYHdevice.send_8bit_data(topic_r + 0x0F)
+                        grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + 0x0F)
                     except Exception as e:
                             print(e)
                     level_max_prev_l = level_max_l
@@ -436,9 +440,9 @@ def interact_GYH_process():
             button_push_counter_prev_r = grabYourHeart_right.button_push_counter
 
         else:
-            if USE_LEFT_ONLY:
+            if LEFT_ONLY:
                 pass
-            # 通常は対のGYHデバイスに送信する
+            # 手が見つかっていないことをleft側GYHデバイスに知らせる
             else:
                 grabYourHeart_left.myGYHdevice.send_8bit_data(0)
             
@@ -813,7 +817,7 @@ if __name__ == '__main__':
     button_update_param_l.bind(sequence="<ButtonRelease>", func = lambda event, device = grabYourHeart_left, whitch = 'left' : update_params(device, whitch))
 
     # GUI右側用のデバイスをインスタンス化し、ウィジェットを初期化する。
-    if USE_LEFT_ONLY:
+    if LEFT_ONLY:
         grabYourHeart_right = grabYourHeart(port_right, debug_mode= True)
     else:
         grabYourHeart_right = grabYourHeart(port_right)
