@@ -89,28 +89,120 @@ const u4 cu4_HEART_RATE_INTERVAL_ARRAY[16] = {
                                 0xFFFFFFFF  /* ****ms */};
                                 
 // const を付けると printEfont でコンパイルエラーが出るためコメントアウト
-/* const */ char* HELP_MESSAGE_ARRAY[100] = {
-                                "[スラムダンク]",     "[キングダム]",      "[レベルE]",      "[怪獣8号]",     "[葬送のフリーレン]", 
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "",
-                                "",                 "",                "",              "",             "" };
-
+/* const */ char* HELP_MESSAGE_ARRAY[112] = {
+                                "[スポーツ観戦]",
+                                "[筋トレ]",
+                                "[映画鑑賞]",
+                                "[マイブーム]",
+                                "[読書]",
+                                "[英会話]",
+                                "[書道]",
+                                "[雑学]",
+                                "[美術]",
+                                "[ヨガ]",
+                                "[エクササイズ]",
+                                "[フィットネス]",
+                                "[ダイエット]",
+                                "[美容]",
+                                "[ネイルアート]",
+                                "[着付け]",
+                                "[手芸]",
+                                "[編み物]",
+                                "[チーズ]",
+                                "[生け花]",
+                                "[ガーデニング]",
+                                "[料理]",
+                                "[ファッション]",
+                                "[アウトドア]",
+                                "[ダンス]",
+                                "[サンバ]",
+                                "[パントマイム]",
+                                "[雑貨]",
+                                "[手品]",
+                                "[お菓子]",
+                                "[大道芸]",
+                                "[伝統芸能]",
+                                "[ライフスタイル]",
+                                "[サブカルチャー]",
+                                "[オタク]",
+                                "[DIY]",
+                                "[ギャル]",
+                                "[ゴスロリ]",
+                                "[アイドル]",
+                                "[お笑い芸人]",
+                                "[タレント]",
+                                "[マーケティング]",
+                                "[IT]",
+                                "[経営戦略]",
+                                "[ビジネス]",
+                                "[コンサルティング]",
+                                "[マネジメント]",
+                                "[ベンチャー]",
+                                "[ファイナンス]",
+                                "[ファンド]",
+                                "[盆栽]",
+                                "[陶芸]",
+                                "[園芸]",
+                                "[古美術]",
+                                "[コレクション]",
+                                "[茶道]",
+                                "[お酒]",
+                                "[ブライダル]",
+                                "[ショッピング]",
+                                "[レストラン]",
+                                "[カフェ]",
+                                "[ディズニーランド]",
+                                "[ユニバーサル・スタジオ・ジャパン]",
+                                "[富士急ハイランド]",
+                                "[人生相談]",
+                                "[恋愛相談]",
+                                "[飲み会]",
+                                "[合コン]",
+                                "[お見合い]",
+                                "[旅行]",
+                                "[休暇]",
+                                "[修学旅行]",
+                                "[夏休み]",
+                                "[冬休み]",
+                                "[合宿]",
+                                "[学校行事]",
+                                "[部活動]",
+                                "[文化祭]",
+                                "[体育祭]",
+                                "[ペット]",
+                                "[犬]",
+                                "[ネコ]",
+                                "[ウサギ]",
+                                "[マンガ]",
+                                "[ギャグ]",
+                                "[一発ギャグ]",
+                                "[持ちネタ]",
+                                "[ゲーム]",
+                                "[ファミコン]",
+                                "[特技]",
+                                "[さかなクン]",
+                                "[武道]",
+                                "[自然食]",
+                                "[アンチエイジング]",
+                                "[ウォーキング]",
+                                "[音楽]",
+                                "[日用品]",
+                                "[エコロジー]",
+                                "[イケメン]",
+                                "[エンターテインメント]",
+                                "[俳句]",
+                                "[マイホーム]",
+                                "[ブティック]",
+                                "[ホームステイ]",
+                                "[放課後]",
+                                "[ゴールデンウィーク]",
+                                "[運動部]",
+                                "[観賞魚]",
+                                "[絵本]",
+                                "[セガサターン]",
+                                "[ゲームボーイ]",
+                                "[プレイステーション]"};
+                                
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Global variable
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -492,8 +584,8 @@ void serialReceiveManager()
             }
         }
 
-        //Serial.print("received: ");
-        //Serial.println(u1t_rcvData);
+        // Serial.print("received: ");
+        // Serial.println(u1t_rcvData);
 
         // 受信データを解析する
         parseReceveData(u1t_rcvData);
@@ -562,10 +654,13 @@ void displayManager()
 
         M5.Lcd.clear(BLACK);
 
-        if (u1s_messageNumber < (u1)0x64) {
+        if (u1s_messageNumber == (u1)0x00) {
+            printEfont("ちょっと待ってね。",       30, 16*1, 1);
+            printEfont("準備中だよ(^_-)-☆", 30, 16*3, 1);
+        } else if (u1s_messageNumber < (u1)0x70) {
             printEfont("次は", 30, 16*1, 1);
             printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 1);
-            printEfont("の話をしたいな。", 30, 16*5, 1);
+            printEfont("の話をしたいな！", 30, 16*5, 1);
         } else {
             printEfont("もうアナタと話したくない (-_-メ)", 30, 16*1, 1);
         }
@@ -659,8 +754,14 @@ static boolean isElapsed1000ms()
  */
 static void parseReceveData(u1 u1t_rcvData)
 {
+    // initial data の場合
+    if (u1t_rcvData == 0x00) {
+
+        u1s_isMessageReceved = true;
+        u1s_messageNumber    = 0x00;
+        
     // heart rate data の場合
-    if (u1t_rcvData <= 0x0F) {
+    } else if (u1t_rcvData <= 0x0F) {
 
         // 心拍数を mode で取得する場合
         if (true) {
@@ -676,22 +777,22 @@ static void parseReceveData(u1 u1t_rcvData)
             }
         }
 
-        //Serial.print("interval: ");
-        //Serial.print(u4s_heartRateInterval);
-        //Serial.println("(ms)");
+        // Serial.print("interval: ");
+        // Serial.print(u4s_heartRateInterval);
+        // Serial.println("(ms)");
 
     // message data の場合
     } else if (u1t_rcvData <= 0xEF) {
 
         u1s_isMessageReceved = true;
-        u1s_messageNumber    = u1t_rcvData - 0x10;
+        u1s_messageNumber    = u1t_rcvData - 0x10 + 0x01;
 
-        Serial.print("message No: ");
-        Serial.println(u1s_messageNumber);
+        // Serial.print("message No: ");
+        // Serial.println(u1s_messageNumber);
 
     // reserve data の場合
     } else {
-        Serial.println("receive data");
+        // Serial.println("receive data");
     }
 }
 
