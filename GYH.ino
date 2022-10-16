@@ -734,6 +734,7 @@ void displayManager()
         if (u1s_isChangedDisplayMode) {
             if (!u1s_isInitAvatar) {
                 avatar.init();
+                u1s_isInitAvatar = true;
             } else {
                 avatar.start();
             }
