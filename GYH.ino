@@ -16,6 +16,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <M5Stack.h>
+#include <Avatar.h>
 
 #include "efont.h"
 #include "efontESP32.h"
@@ -24,6 +25,8 @@
 #include "MAX30100_PulseOximeter.h"
 #include "MAX30100.h"   //心拍センサ用のArduinoライブラリ
 //#include "secrets.h"
+
+using namespace m5avatar;
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // StdTypes ※後で別ファイルに定義する
@@ -72,6 +75,10 @@ typedef float           pl;
 #define HEART_RATE_BEAT_MODE3           2
 #define HEART_RATE_BEAT_MODE_NUM        3
 
+#define DISPLAY_MODE_MESSAGE            0
+#define DISPLAY_MODE_PRE_AVATAR         1
+#define DISPLAY_MODE_AVATAR             2
+
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Const
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -87,7 +94,18 @@ const u4 cu4_HEART_RATE_INTERVAL_ARRAY[16] = {
                                 0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */
                                 0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */
                                 0xFFFFFFFF  /* ****ms */};
-                                
+
+const Expression expressions[5] = {
+                                Expression::Sad,
+                                Expression::Doubt,
+                                Expression::Neutral,
+                                Expression::Happy,
+                                Expression::Angry
+//                                Expression::Sleepy
+                                };
+
+const int expressionsSize = sizeof(expressions) / sizeof(Expression);
+                              
 // const を付けると printEfont でコンパイルエラーが出るためコメントアウト
 /* const */ char* HELP_MESSAGE_ARRAY[112] = {
                                 "[スポーツ観戦]",
@@ -211,7 +229,7 @@ hw_timer_t *timer0 = NULL;
 hw_timer_t *timer1 = NULL;
 
 // sprite の インスタンス生成 (LCD チラつき防止)
-TFT_eSprite sprite = TFT_eSprite(&M5.Lcd);
+// TFT_eSprite sprite = TFT_eSprite(&M5.Lcd);
 
 // Heart Rate Device で計測したセンサ値を格納する変数
 // ※HEARTRATE_ACTIVE_MODE_SW = 0 の時のみ値が設定される
@@ -220,6 +238,9 @@ MAX30100        heartRateSensor;
 // Heart Rate Device で算出した bpm を格納する変数
 // ※HEARTRATE_ACTIVE_MODE_SW = 1 の時のみ値が設定される
 PulseOximeter   pulseOximeter;
+
+// avatar のインスタンス変数
+Avatar          avatar;
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Static variable
@@ -239,7 +260,12 @@ u1  u1s_isBeat;                     // true:beat mode, false:interval mode
 u1  u1s_heartRateBeatMode;          // u1s_isBeat = true の時の内部状態
 
 u1  u1s_isMessageReceved;           // メッセージを受信したかどうか
+u1  u1s_displayMode;                // display に何を表示させるか
+u1  u1s_isChangedDisplayMode;       // display のモードが切り替わったか
 u1  u1s_messageNumber;              // display に表示するメッセージ番号
+
+u1  u1s_isInitAvatar;               // avatar を初期化したかどうか
+u1  u1s_expressionMode;             // avatar の表情
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Prototypes
@@ -310,7 +336,12 @@ void setup()
     u4s_heartRateSendRollingCnt = (u4)0x00000000;
 
     u1s_isMessageReceved        = false;
+    u1s_displayMode             = (u1)DISPLAY_MODE_MESSAGE;
+    u1s_isChangedDisplayMode    = false;
     u1s_messageNumber           = (u1)0x00;
+
+    u1s_isInitAvatar            = false;
+    u1s_expressionMode          = (u1)0x02;
 
     // setting common
     u4s_counter                 = (u4)0x00000000;
@@ -650,22 +681,87 @@ void hearRateManager()
  */
 void displayManager() 
 {
-    if (u1s_isMessageReceved) {
+    // メッセージを表示
+    if (u1s_displayMode == (u1)DISPLAY_MODE_MESSAGE) {
 
-        M5.Lcd.clear(BLACK);
+        if (u1s_isChangedDisplayMode) {
 
-        if (u1s_messageNumber == (u1)0x00) {
-            printEfont("ちょっと待ってね。",       30, 16*1, 1);
-            printEfont("準備中だよ(^_-)-☆", 30, 16*3, 1);
-        } else if (u1s_messageNumber < (u1)0x70) {
-            printEfont("次は", 30, 16*1, 1);
-            printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 1);
-            printEfont("の話をしたいな！", 30, 16*5, 1);
-        } else {
-            printEfont("もうアナタと話したくない (-_-メ)", 30, 16*1, 1);
+            // avatar の表示を停止させる 1回 の stop だと止まらない場合があるため、複数回実行する
+            // ★★★ ここで "Task watchdog got triggered. The following tasks did not reset the watchdog in time" が発生することが多い！！！
+            avatar.stop();
+            delay(20);
+            avatar.stop();
+            delay(20);
+            avatar.stop();
         }
 
-        u1s_isMessageReceved = false;
+        if (u1s_isMessageReceved || u1s_isChangedDisplayMode) {
+    
+            M5.Lcd.clear(BLACK);
+    
+            if (u1s_messageNumber == (u1)0x00) {
+                printEfont("ちょっと待ってね。",       30, 16*1, 1);
+                printEfont("準備中だよ(^_-)-☆", 30, 16*3, 1);
+            } else if (u1s_messageNumber < (u1)0x70) {
+                printEfont("次は", 30, 16*1, 1);
+                printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 1);
+                printEfont("の話をしたいな！", 30, 16*5, 1);
+            } else {
+                printEfont("もうアナタと話したくない (-_-メ)", 30, 16*1, 1);
+            }
+    
+            u1s_isMessageReceved     = false;
+            u1s_isChangedDisplayMode = false;
+        }
+        
+    // メッセージを表示
+    } else if (u1s_displayMode == (u1)DISPLAY_MODE_PRE_AVATAR) {
+
+        if (u1s_isChangedDisplayMode) {
+
+            M5.Lcd.clear(BLACK);
+            
+            printEfont("心の中を覗きますか？",          30, 16*1, 1);
+            printEfont("残り 3回 まで無料で覗けます。",  30, 16*3, 1);
+            printEfont("A：覗く",                    40, 16*5, 1);
+            printEfont("C：後ろめたいが覗く",          40, 16*7, 1);
+
+            u1s_isChangedDisplayMode = false;
+        }
+
+    // アバターを表示
+    } else {
+        if (u1s_isChangedDisplayMode) {
+            if (!u1s_isInitAvatar) {
+                avatar.init();
+            } else {
+                avatar.start();
+            }
+
+            // TODO
+            avatar.setExpression(expressions[u1s_expressionMode]);
+
+            switch (u1s_expressionMode) {
+                case 0x00:
+                case 0x01:
+                    avatar.setSpeechText("not very fun.");
+                    break;
+                case 0x02:
+                    avatar.setSpeechText("");
+                    break;
+                case 0x03:
+                    avatar.setSpeechText("very fun. ");
+                    break;
+                case 0x04:
+                    avatar.setSpeechText("you're selfish.");
+                    break;
+                default:
+                    /* nop */
+                    break;
+            }
+            
+            u1s_isChangedDisplayMode = false;
+        }
     }
     
     // sprite.fillScreen(BLACK);
@@ -690,6 +786,11 @@ void buttonManager()
 
     // ボタン A を離した時
     if (M5.BtnA.wasReleased()) {
+
+        u1s_displayMode = u1s_displayMode == (u1)DISPLAY_MODE_MESSAGE    ? (u1)DISPLAY_MODE_PRE_AVATAR
+                        : u1s_displayMode == (u1)DISPLAY_MODE_PRE_AVATAR ? (u1)DISPLAY_MODE_AVATAR : (u1)DISPLAY_MODE_MESSAGE;
+
+        u1s_isChangedDisplayMode = true;
     
     // ボタン A を 1000ms 以上長押しした時
     } else if (M5.BtnA.pressedFor(1000)) {
@@ -707,7 +808,10 @@ void buttonManager()
     // ボタン C を離した時
     } else if (M5.BtnC.wasReleased()) {
 
-        M5.Lcd.clear(BLACK);
+        if (u1s_displayMode == (u1)DISPLAY_MODE_PRE_AVATAR) {
+            u1s_displayMode          = (u1)DISPLAY_MODE_AVATAR;
+            u1s_isChangedDisplayMode = true;
+        }
         
     // ボタン C を 1000ms 以上長押しした時
     } else if (M5.BtnC.pressedFor(1000)) {
@@ -780,6 +884,9 @@ static void parseReceveData(u1 u1t_rcvData)
         // Serial.print("interval: ");
         // Serial.print(u4s_heartRateInterval);
         // Serial.println("(ms)");
+
+        // とりあえず、心拍の mode と同じ値を expression の mode に格納する
+        u1s_expressionMode = u1t_rcvData < expressionsSize ? u1t_rcvData - 1 : expressionsSize - 1;
 
     // message data の場合
     } else if (u1t_rcvData <= 0xEF) {
