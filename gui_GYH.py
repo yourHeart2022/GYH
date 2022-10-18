@@ -31,12 +31,14 @@ import random
 import control_GYH as GYH
 import topic_generator as tpg
 
-port_left = 'COM3'
-port_right = 'COM5'
+port_left = 'COM5'
+port_right = 'COM3'
 
-LEFT_ONLY     = True
-RIGHT_OBSERV = False
+LEFT_ONLY     = False
+RIGHT_OBSERV = True
 BPM_CHANGE_RATE = 0.1 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
+
+message_offset = 0x0e
 
 class grabYourHeart():
     '''# class grabYourHeart
@@ -102,6 +104,7 @@ class grabYourHeart():
         self.finger_find_flag    = False
         self.finger_find_pre_flag= False
         self.bpm_stable_flag     = False
+        self.bpm_generate_flag   = False
         self.button_push_counter = 0
 
     def measurement_process(self):
@@ -229,6 +232,7 @@ class grabYourHeart():
 
             # 所定のデータ長さ以上になったらピークカウントを行う
             if self.finger_find_flag:
+                self.bpm_generate_flag = True
 
                 data_tobe_processed = np.array(self.ir_data_list)
                 # ピークをカウントするライブラリを使う
@@ -261,6 +265,7 @@ class grabYourHeart():
             else:
                 self.bpm = None
                 self.bpm_stable_flag = False
+                self.bpm_generate_flag = False
                 bpm_list = []
                 bpm_prev1 = 60
                 bpm_prev2 = 60
@@ -303,7 +308,7 @@ def interact_GYH_process():
         # ------------------------------------------------------------------------------
         #     Left側のGYHデバイスの処理
         # ------------------------------------------------------------------------------
-        if grabYourHeart_left.finger_find_flag:
+        if grabYourHeart_left.bpm_generate_flag:
 
             # Left側が初めて安定になったタイミングの処理
             if grabYourHeart_left.bpm_stable_flag == True and bpm_base_l == None:
@@ -316,7 +321,8 @@ def interact_GYH_process():
                 topicgen_l = tpg.topicGenerator()
                 topic_l = topicgen_l.get_topic(0)
                 print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
-                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x0F)
+                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + message_offset)
+                time.sleep(1)
 
             # Left側が安定になった後の心拍値の処理
             if bpm_base_l != None:
@@ -346,7 +352,7 @@ def interact_GYH_process():
                     try:
                         print('@ left GYH ', 'score_L = ', level_max_l - level_max_prev_l, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_l)])
                 
-                        grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x0F)
+                        grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + message_offset)
                     except Exception as e:
                         print(e)
                     level_max_prev_l = level_max_l
@@ -360,7 +366,7 @@ def interact_GYH_process():
                         try:
                             print('@ right GYH ', 'score_R = ', level_max_r - level_max_prev_r, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_l)])
 
-                            grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + 0x0F)
+                            grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + message_offset)
                         except Exception as e:
                             print(e)
                         level_max_prev_r = level_max_r
@@ -389,7 +395,7 @@ def interact_GYH_process():
         # ------------------------------------------------------------------------------
         #     Right側のGYHデバイスの処理
         # ------------------------------------------------------------------------------
-        if grabYourHeart_right.finger_find_flag and LEFT_ONLY == False:
+        if grabYourHeart_right.bpm_generate_flag and LEFT_ONLY == False:
 
             # Rightg側が初めて安定になったタイミングの処理
             if grabYourHeart_right.bpm_stable_flag == True and bpm_base_r == None:
@@ -403,10 +409,11 @@ def interact_GYH_process():
                     topicgen_r = tpg.topicGenerator()
                     topic_r = topicgen_r.get_topic(0)
                     print('@ right GYH ', tpg.TOPIC_TO_NAME[str(topic_r)])
-                    grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + 0x0F)
+                    grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + message_offset)
                 # 観察者モードのとき
                 else:
                     pass
+                time.sleep(1)
 
             # Rightg側が安定になった後の心拍値の処理
             if bpm_base_r != None:
@@ -431,7 +438,7 @@ def interact_GYH_process():
                     try:
                         print('@ left GYH ', 'score_L = ',level_max_l - level_max_prev_l, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_r)])
                 
-                        grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + 0x0F)
+                        grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + message_offset)
                     except Exception as e:
                             print(e)
                     level_max_prev_l = level_max_l
