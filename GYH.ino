@@ -283,6 +283,8 @@ static boolean isElapsed100ms();
 static boolean isElapsed1000ms();
 static void parseReceveData(u1);
 static void changeHeartRateInterval(u1);
+static void setMessageNumber(u1);
+static void stopMotor();
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Initialize
@@ -328,9 +330,10 @@ void setup()
     //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
     //■ 変数の初期設定
     //■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-    u4s_heartRateInterval       = (u4)0x0007A120;           // 500ms (LSB 1us) ※ひとまず適当な値を設定
+    // 心拍モードを受信するまでは、偏心モータの動作を停止させる
+    stopMotor();
+    
     u1s_heartRateBeatMode       = (u1)HEART_RATE_BEAT_MODE1;
-    u1s_isBeat                  = true;
     u4s_heartRateOldTime        = (u4)0x00000000;
     u4s_heartRateSendCntOld     = (u4)0x00000000;
     u4s_heartRateSendRollingCnt = (u4)0x00000000;
@@ -392,7 +395,6 @@ void setup_display()
 
     M5.Lcd.clear(BLACK);
     printEfont("今日も私を楽しませてね！", 30, 16*1, 1);
-
 
     // スプライトは使わないように変更
     // スプライトの初期化
@@ -662,6 +664,13 @@ void hearRateManager()
 
     // Interval Mode
     } else {
+
+        // 0x00 の データを受信して 強制的に Beat Mode から Interval Mode に遷移させた時、
+        // HIGH 出力のケースのまま遷移することがあるため、ここで強制的に Low を出力する
+        if (digitalRead(MOTOR_PIN) == HIGH) {
+            digitalWrite(MOTOR_PIN, LOW);
+        }
+        
         if (u4t_interval > u4s_heartRateInterval) {
             // u1t_port_val = digitalRead(MOTOR_PIN) == LOW ? HIGH : LOW;
 
@@ -700,12 +709,19 @@ void displayManager()
             M5.Lcd.clear(BLACK);
     
             if (u1s_messageNumber == (u1)0x00) {
-                printEfont("ちょっと待ってね。",       30, 16*1, 1);
-                printEfont("準備中だよ(^_-)-☆", 30, 16*3, 1);
+                printEfont("今日も私を楽しませてね！", 30, 16*1, 1);
             } else if (u1s_messageNumber < (u1)0x70) {
                 printEfont("次は", 30, 16*1, 1);
                 printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 1);
                 printEfont("の話をしたいな！", 30, 16*5, 1);
+            } else if (u1s_messageNumber == (u1)0xFD) {
+                printEfont("ちょっと待ってね。",       30, 16*1, 1);
+                printEfont("準備中だよ(^_-)-☆", 30, 16*3, 1);
+            } else if (u1s_messageNumber == (u1)0xFE) {
+                printEfont("お待たせ！",       30, 16*1, 1);
+                printEfont("準備できたよ(^^♪", 30, 16*3, 1);
+            } else if (u1s_messageNumber == (u1)0xFF) {
+                printEfont("楽しすぎて心拍停止中…",       30, 16*1, 1);
             } else {
                 printEfont("もうアナタと話したくない (-_-メ)", 30, 16*1, 1);
             }
@@ -812,6 +828,9 @@ void buttonManager()
         if (u1s_displayMode == (u1)DISPLAY_MODE_PRE_AVATAR) {
             u1s_displayMode          = (u1)DISPLAY_MODE_AVATAR;
             u1s_isChangedDisplayMode = true;
+
+            // ボタン C の時は、常に angry とする
+            u1s_expressionMode = 4;
         }
         
     // ボタン C を 1000ms 以上長押しした時
@@ -862,15 +881,26 @@ static void parseReceveData(u1 u1t_rcvData)
     // initial data の場合
     if (u1t_rcvData == 0x00) {
 
-        u1s_isMessageReceved = true;
-        u1s_messageNumber    = 0x00;
+        setMessageNumber(0xFD);
+
+        // 偏心モータの振動を停止させる
+        stopMotor();
         
     // heart rate data の場合
     } else if (u1t_rcvData <= 0x0F) {
 
+        // 心拍モードを受信できない状態から復帰した場合　TODO:u1s_messageNumber で制御するのは良くないので後で修正する
+        if (u1s_messageNumber == 0xFD) {
+            setMessageNumber(0xFE);
+        }
+
         // 心拍数を mode で取得する場合
         if (true) {
             u4s_heartRateInterval = cu4_HEART_RATE_INTERVAL_ARRAY[u1t_rcvData];
+
+            if (u4s_heartRateInterval == (u4)0xFFFFFFFF) {
+                setMessageNumber(0xFF);
+            }
             
         // 心拍数を bpm で取得する場合
         } else {
@@ -892,8 +922,7 @@ static void parseReceveData(u1 u1t_rcvData)
     // message data の場合
     } else if (u1t_rcvData <= 0xEF) {
 
-        u1s_isMessageReceved = true;
-        u1s_messageNumber    = u1t_rcvData - 0x10 + 0x01;
+        setMessageNumber(u1t_rcvData - 0x10 + 0x01);
 
         // Serial.print("message No: ");
         // Serial.println(u1s_messageNumber);
@@ -904,6 +933,23 @@ static void parseReceveData(u1 u1t_rcvData)
     }
 }
 
+/**
+ * メッセージ番号を設定する
+ */
+static void setMessageNumber(u1 u1t_messageNumber)
+{
+    u1s_messageNumber    = u1t_messageNumber;
+    u1s_isMessageReceved = true;
+}
+
+/**
+ * モーターを停止させる
+ */
+static void stopMotor(void)
+{
+    u1s_isBeat              = false;
+    u4s_heartRateInterval   = (u4)0xFFFFFFFF;
+}
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Service Layer ※ここで Application と MCAL の依存関係を排除
