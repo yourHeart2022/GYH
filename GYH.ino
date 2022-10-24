@@ -247,9 +247,10 @@ Avatar          avatar;
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // アライメントを考慮し PL → u4/s4 → u2/s2 → u1/s1 の順で定義すること
 u4  u4s_counter;                    // カウンタ値(LSB 1ms)
-u4  u4s_counter100ms;               // 100ms  用カウンタ値
-u4  u4s_counter1000ms;              // 1000ms 用カウンタ値
-u4  u4s_heartRateSendCntOld;        // Hear Rate Send で使うカウンタの前回値(LSB 1ms)
+u4  u4s_counter10ms;                // 10ms     スケジューラ用カウンタ値
+u4  u4s_counter100ms;               // 100ms    スケジューラ用カウンタ値
+u4  u4s_counter1000ms;              // 1000ms   スケジューラ用カウンタ値
+
 u4  u4s_heartRateSendRollingCnt;    // Hear Rate Send で使う Rolling counter
 u4  u4s_heartRateInterval;          // u1s_isBeat = false の時の intarval 値
 u4  u4s_heartRateOldTime;           // フリーランカウンタの前回値. beatMode の遷移や intaval の経過判定に使う
@@ -279,6 +280,7 @@ void serialReceiveManager();
 void hearRateManager();
 void displayManager();
 void buttonManager();
+static boolean isElapsed10ms();
 static boolean isElapsed100ms();
 static boolean isElapsed1000ms();
 static void parseReceveData(u1);
@@ -335,7 +337,6 @@ void setup()
     
     u1s_heartRateBeatMode       = (u1)HEART_RATE_BEAT_MODE1;
     u4s_heartRateOldTime        = (u4)0x00000000;
-    u4s_heartRateSendCntOld     = (u4)0x00000000;
     u4s_heartRateSendRollingCnt = (u4)0x00000000;
 
     u1s_isMessageReceved        = false;
@@ -348,6 +349,7 @@ void setup()
 
     // setting common
     u4s_counter                 = (u4)0x00000000;
+    u4s_counter10ms             = (u4)0x00000000;
     u4s_counter100ms            = (u4)0x00000000;
     u4s_counter1000ms           = (u4)0x00000000;
 
@@ -466,14 +468,18 @@ void setup_wifi()
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 void loop()
 {
-    // 心拍数の送信
-    hearRateSendManager();
-
     // シリアルデータの受信
     serialReceiveManager();
 
     // 心拍数からモーターを制御
     hearRateManager();
+
+    // 10 ms スケジューラ
+    if (isElapsed10ms()) {
+        
+         // 心拍数の送信
+        hearRateSendManager();
+    }
 
     // 100 ms スケジューラ
     if (isElapsed100ms()) {
@@ -525,30 +531,25 @@ void hearRateSendManager()
         // Heart Rate Device から センサ値 を取得する場合
         if (HEARTRATE_ACTIVE_MODE_SW == 0) {
             
-            if (u4s_counter - u4s_heartRateSendCntOld >= (u4)0x0000000A) {
+            // Make sure to call update as fast as possible
+            // (If you don't run at the fast, you will always get "0" output.)
+            heartRateSensor.update();
 
-                // Make sure to call update as fast as possible
-                // (If you don't run at the fast, you will always get "0" output.)
-                heartRateSensor.update();
+            // ir：***** と red：***** を取得する
+            u2 u2t_ir, u2t_red;
+            heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
+            
+            Serial.print(u2t_ir);
+            Serial.print(",");
 
-                // ir：***** と red：***** を取得する
-                u2 u2t_ir, u2t_red;
-                heartRateSensor.getRawValues(&u2t_ir, &u2t_red);
-                
-                Serial.print(u2t_ir);
-                Serial.print(",");
+            // 1ms のカウンタ値を送信するように変更
+            // (受信側で心拍数を算出するときに使用するため)
+            // Serial.println(u4s_heartRateSendRollingCnt++);
+            Serial.println(u4s_counter);
 
-                // 1ms のカウンタ値を送信するように変更
-                // (受信側で心拍数を算出するときに使用するため)
-                // Serial.println(u4s_heartRateSendRollingCnt++);
-                Serial.println(u4s_counter);
-
-                // ir だけ送信すればで良いためコメントアウト
-                // Serial.print(", ");
-                // Serial.println(u2t_red);
-
-                u4s_heartRateSendCntOld = u4s_counter;
-            }
+            // ir だけ送信すればで良いためコメントアウト
+            // Serial.print(", ");
+            // Serial.println(u2t_red);
 
         // Heart Rate Device から bpm を取得する場合
         } else {
@@ -556,15 +557,12 @@ void hearRateSendManager()
             // Make sure to call update as fast as possible
             // (If you don't run at the fast, you will always get "0" output.)
             pulseOximeter.update();
-            if (u4s_counter - u4s_heartRateSendCntOld >= (u4)0x00000005) {
-                Serial.print("Heart rate:");
-                Serial.print(pulseOximeter.getHeartRate());
-                Serial.print("bpm / SpO2:");
-                Serial.print(pulseOximeter.getSpO2());
-                Serial.println("%");
 
-                u4s_heartRateSendCntOld = u4s_counter;
-            }
+            Serial.print("Heart rate:");
+            Serial.print(pulseOximeter.getHeartRate());
+            Serial.print("bpm / SpO2:");
+            Serial.print(pulseOximeter.getSpO2());
+            Serial.println("%");
         }
     }
 }
@@ -844,6 +842,21 @@ void buttonManager()
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 
 /**
+ * 10ms 経過したかどうかを判断する
+ */
+static boolean isElapsed10ms()
+{
+    boolean result = false;
+
+    if (u4s_counter - u4s_counter10ms >= (u4)0x0000000A) {
+        u4s_counter10ms = u4s_counter;
+        result = true;
+    }
+
+    return result;
+}
+
+/**
  * 100ms 経過したかどうかを判断する
  */
 static boolean isElapsed100ms()
@@ -924,8 +937,9 @@ static void parseReceveData(u1 u1t_rcvData)
 
         setMessageNumber(u1t_rcvData - 0x10 + 0x01);
 
-        // Serial.print("message No: ");
-        // Serial.println(u1s_messageNumber);
+        Serial.print(0x0001);
+        Serial.print(",");
+        Serial.println(0x0000);
 
     // reserve data の場合
     } else {
