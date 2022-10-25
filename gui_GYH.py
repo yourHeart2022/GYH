@@ -34,7 +34,7 @@ import topic_generator as tpg
 port_left = 'COM5'
 port_right = 'COM3'
 
-LEFT_ONLY     = False
+LEFT_ONLY     = True
 RIGHT_OBSERV = True
 BPM_CHANGE_RATE = 0.1 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 
@@ -81,13 +81,16 @@ class grabYourHeart():
     def __init__(self, port, baud_rate = 115200, timeout = 1, debug_mode = False):
         self.port = port
         self.myGYHdevice = GYH.hr_device(port, baud_rate, debug_mode = debug_mode)
+
+        # 心拍送信周期
+        self.send_rate = 100 # [Hz]
         
         # measurement_processメソッドのパラメータ
-        self.IR_SIGNAL_THRESH       = 40000 
-        self.ERASE_DATA_LENGTH      = 3     
-        self.DATA_LIST_MAX_LENGTH   = 30    
-        self.FINGER_FIND_LENGTH     = 5     
-        self.FINGER_FIND_LENGTH_PRE = 3
+        self.IR_SIGNAL_THRESH       = 30000 
+        self.ERASE_DATA_LENGTH      = 3    #[sec] 
+        self.DATA_LIST_MAX_LENGTH   = 30   #[sec] 
+        self.FINGER_FIND_LENGTH     = 5    #[sec]  
+        self.FINGER_FIND_LENGTH_PRE = 3    #[sec]
 
         # calc_bpm_processメソッドのパラメータ
         self.USE_FFT         = False
@@ -95,7 +98,7 @@ class grabYourHeart():
         self.PROMINANCE_LOW  = 500          
         self.DATA_LIST_CALC_LENGTH = 10
         self.STABLE_VARIANCE     = 1.5
-        self.STABLE_JUDGE_LENGTH = 5
+        self.STABLE_JUDGE_LENGTH = 5       #[sec]
 
         # 他インスタンス変数
         self.ir_data_list = []
@@ -321,8 +324,8 @@ def interact_GYH_process():
                 topicgen_l = tpg.topicGenerator()
                 topic_l = topicgen_l.get_topic(0)
                 print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
-                grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + message_offset)
-                time.sleep(1)
+                grabYourHeart_left.myGYHdevice.send_8bit_message(topic_l + message_offset)
+                # time.sleep(1)
 
             # Left側が安定になった後の心拍値の処理
             if bpm_base_l != None:
@@ -341,7 +344,7 @@ def interact_GYH_process():
                 # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
                 level_max_l = max(level_max_l, level_l)
 
-                time.sleep(1)
+                # time.sleep(1)
 
             # Left側ボタンが押されたらLeft側トピックを生成する
             if grabYourHeart_left.button_push_counter != button_push_counter_prev_l and bpm_base_l != None:
@@ -352,7 +355,7 @@ def interact_GYH_process():
                     try:
                         print('@ left GYH ', 'score_L = ', level_max_l - level_max_prev_l, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_l)])
                 
-                        grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + message_offset)
+                        grabYourHeart_left.myGYHdevice.send_8bit_message(topic_l + message_offset)
                     except Exception as e:
                         print(e)
                     level_max_prev_l = level_max_l
@@ -366,7 +369,7 @@ def interact_GYH_process():
                         try:
                             print('@ right GYH ', 'score_R = ', level_max_r - level_max_prev_r, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_l)])
 
-                            grabYourHeart_left.myGYHdevice.send_8bit_data(topic_l + message_offset)
+                            grabYourHeart_left.myGYHdevice.send_8bit_message(topic_l + message_offset)
                         except Exception as e:
                             print(e)
                         level_max_prev_r = level_max_r
@@ -409,7 +412,7 @@ def interact_GYH_process():
                     topicgen_r = tpg.topicGenerator()
                     topic_r = topicgen_r.get_topic(0)
                     print('@ right GYH ', tpg.TOPIC_TO_NAME[str(topic_r)])
-                    grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + message_offset)
+                    grabYourHeart_right.myGYHdevice.send_8bit_message(topic_r + message_offset)
                 # 観察者モードのとき
                 else:
                     pass
@@ -438,7 +441,7 @@ def interact_GYH_process():
                     try:
                         print('@ left GYH ', 'score_L = ',level_max_l - level_max_prev_l, ', topic = ', tpg.TOPIC_TO_NAME[str(topic_r)])
                 
-                        grabYourHeart_right.myGYHdevice.send_8bit_data(topic_r + message_offset)
+                        grabYourHeart_right.myGYHdevice.send_8bit_message(topic_r + message_offset)
                     except Exception as e:
                             print(e)
                     level_max_prev_l = level_max_l

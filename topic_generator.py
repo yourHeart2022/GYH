@@ -151,14 +151,14 @@ class topicGenerator():
                 # 今回のトピックがウケた場合、今回のトピックに関連するトピックにする
                 if topic_result > 0 and self.topic_current < 90:
                     serch_rel_topic = self.topic_current
-                    print('今回のトピックがウケた場合、今回のトピックに関連するトピックにする')
+                    # print('今回のトピックがウケた場合、今回のトピックに関連するトピックにする')
                 
                 # 今回のトピックがウケなかった場合、もしくは終端トピック（関連がないトピック）だった場合
                 else:
-                    print('今回のトピックがウケなかった場合、もしくは終端トピック（関連がないトピック）だった場合')
+                    # print('今回のトピックがウケなかった場合、もしくは終端トピック（関連がないトピック）だった場合')
                     # 今回トピックがルートトピックだった場合、もう一度ルートトピックのトピックを生成する
                     if self.root_flag == True:
-                        print('今回トピックがルートトピックだった場合、もう一度ルートトピックのトピックを生成する')
+                        # print('今回トピックがルートトピックだった場合、もう一度ルートトピックのトピックを生成する')
                         topic = random.choice(self.topic_list_root)
                         self.topic_list_root.remove(topic)
 
@@ -170,7 +170,7 @@ class topicGenerator():
 
                     # 今回のトピックがルートトピックでなかった場合、前回のトピックに関連するトピックにする
                     else:
-                        print('今回のトピックがルートトピックでなかった場合、前回のトピックに関連するトピックにする')
+                        # print('今回のトピックがルートトピックでなかった場合、前回のトピックに関連するトピックにする')
                         serch_rel_topic = self.topic_prev
                         self.topic_current = self.topic_prev
 
@@ -178,7 +178,7 @@ class topicGenerator():
                 flag = True
                 while flag:
                     try:
-                        print('トピックをkeyとして候補listから関連トピックを生成するが、既出だった場合は生成し直す')
+                        # print('トピックをkeyとして候補listから関連トピックを生成するが、既出だった場合は生成し直す')
                         self.root_flag = False
                         topic = self.topic_dict_rel[str(serch_rel_topic)][0]
                         self.topic_dict_rel[str(serch_rel_topic)].remove(topic)
@@ -186,7 +186,7 @@ class topicGenerator():
                     
                 # そのトピックkeyにはもう候補listがない場合、ルートのトピックを生成する
                     except IndexError as e:
-                        print('そのトピックkeyにはもう候補listがない場合、ルートのトピックを生成する')
+                        # print('そのトピックkeyにはもう候補listがない場合、ルートのトピックを生成する')
                         self.root_flag = True
                         topic = random.choice(self.topic_list_root)
                         self.topic_list_root.remove(topic)

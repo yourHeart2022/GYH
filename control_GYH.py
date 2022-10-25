@@ -21,6 +21,7 @@ class hr_device():
         self.baud_rate  = baud_rate
         self.timeout    = timeout
         self.debug_mode = debug_mode
+        self.retry_num  = 3
 
     def connect(self):
         '''# connect
@@ -152,6 +153,46 @@ class hr_device():
                 # print(data_8bit)
             except:
                 pass
+
+    def send_8bit_message(self, data_8bit):
+        '''# send_bpm_v2
+
+            GYHデバイスへ8ビットデータを送信する関数
+            ACKが返ってこない場合はリトライする
+
+        Args:
+            beat_per_min, int   , 1分間当たりの鼓動回数\n
+        '''
+        data_tobe_send = [data_8bit & 0xff]
+        retry_count = 0
+
+        if self.debug_mode:
+            print('debug mode: write -> ' + str(data_tobe_send))
+        else:
+            # try:
+            while retry_count < self.retry_num:
+                # trash = self.target.readline()
+                self.target.write(data_tobe_send)
+                data = self.target.readline()
+                data = self.target.readline()
+                print(data)
+                try:
+                    data2 = data.strip().split(b",")
+                    data3 = [int(data2[0]), int(data2[1])]
+
+                    if data3[0] == 1:
+                        print('ACK')
+                        break
+                    else:
+                        retry_count = retry_count + 1
+                        print('NACK')
+                except:
+                    retry_count = retry_count + 1
+                    print('ECPT')
+                
+            # except:
+            #     print('except')
+                # pass
 
 if __name__ == '__main__':
     #-----------------------------------------------------
