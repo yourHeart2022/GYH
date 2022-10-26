@@ -31,12 +31,12 @@ import random
 import control_GYH as GYH
 import topic_generator as tpg
 
-port_left = 'COM5'
+port_left = 'COM6'
 port_right = 'COM3'
 
 LEFT_ONLY     = True
 RIGHT_OBSERV = True
-BPM_CHANGE_RATE = 0.1 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
+BPM_CHANGE_RATE = 0.05 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 
 message_offset = 0x0e
 
@@ -325,7 +325,7 @@ def interact_GYH_process():
                 topic_l = topicgen_l.get_topic(0)
                 print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
                 grabYourHeart_left.myGYHdevice.send_8bit_message(topic_l + message_offset)
-                # time.sleep(1)
+                time.sleep(1)
 
             # Left側が安定になった後の心拍値の処理
             if bpm_base_l != None:
@@ -344,7 +344,7 @@ def interact_GYH_process():
                 # ボタンが押されてから、次のボタンが押されるまでのbpm変化レベルの最大値を記録
                 level_max_l = max(level_max_l, level_l)
 
-                # time.sleep(1)
+                time.sleep(1)
 
             # Left側ボタンが押されたらLeft側トピックを生成する
             if grabYourHeart_left.button_push_counter != button_push_counter_prev_l and bpm_base_l != None:

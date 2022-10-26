@@ -937,9 +937,9 @@ static void parseReceveData(u1 u1t_rcvData)
 
         setMessageNumber(u1t_rcvData - 0x10 + 0x01);
 
-        Serial.print(0x0001);
-        Serial.print(",");
-        Serial.println(0x0000);
+        //Serial.print(0x0001);
+        //Serial.print(",");
+        //Serial.println(0x0000);
 
     // reserve data の場合
     } else {

@@ -164,35 +164,16 @@ class hr_device():
             beat_per_min, int   , 1分間当たりの鼓動回数\n
         '''
         data_tobe_send = [data_8bit & 0xff]
-        retry_count = 0
-
         if self.debug_mode:
             print('debug mode: write -> ' + str(data_tobe_send))
         else:
-            # try:
-            while retry_count < self.retry_num:
-                # trash = self.target.readline()
-                self.target.write(data_tobe_send)
-                data = self.target.readline()
-                data = self.target.readline()
-                print(data)
-                try:
-                    data2 = data.strip().split(b",")
-                    data3 = [int(data2[0]), int(data2[1])]
-
-                    if data3[0] == 1:
-                        print('ACK')
-                        break
-                    else:
-                        retry_count = retry_count + 1
-                        print('NACK')
-                except:
-                    retry_count = retry_count + 1
-                    print('ECPT')
-                
-            # except:
-            #     print('except')
-                # pass
+            try:
+                for i in range(3):
+                    self.target.write(data_tobe_send)
+                    time.sleep(0.1)
+                # print(data_8bit)
+            except:
+                pass
 
 if __name__ == '__main__':
     #-----------------------------------------------------
