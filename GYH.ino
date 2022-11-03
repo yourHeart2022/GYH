@@ -9,6 +9,7 @@
 // Motor Device     : FM64G         https://akizukidenshi.com/catalog/g/gP-15317/
 // HeartRate Device : MAX30100      https://akizukidenshi.com/catalog/g/gM-17212/
 
+#include <string.h> 
 #include <Wire.h> 
 #include <SPI.h>
 #include <WiFiClient.h>
@@ -96,17 +97,20 @@ const u4 cu4_HEART_RATE_INTERVAL_ARRAY[16] = {
                                 0xFFFFFFFF  /* ****ms */};
 
 const Expression expressions[5] = {
+                                Expression::Sleepy,
                                 Expression::Sad,
-                                Expression::Doubt,
                                 Expression::Neutral,
                                 Expression::Happy,
                                 Expression::Angry
-//                                Expression::Sleepy
+//                              Expression::Doubt,                                
                                 };
 
 const int expressionsSize = sizeof(expressions) / sizeof(Expression);
                               
 // const を付けると printEfont でコンパイルエラーが出るためコメントアウト
+/* const */ char* COUNT_MESSAGE_ARRAY[4] = {
+                                "0","1","2","3"};
+
 /* const */ char* HELP_MESSAGE_ARRAY[112] = {
                                 "[スポーツ観戦]",
                                 "[筋トレ]",
@@ -267,6 +271,7 @@ u1  u1s_messageNumber;              // display に表示するメッセージ番
 
 u1  u1s_isInitAvatar;               // avatar を初期化したかどうか
 u1  u1s_expressionMode;             // avatar の表情
+u1  u1s_confirmableCountOfAvatar;   // avatar を覗ける回数
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // Prototypes
@@ -346,6 +351,7 @@ void setup()
 
     u1s_isInitAvatar            = false;
     u1s_expressionMode          = (u1)0x02;
+    u1s_confirmableCountOfAvatar= (u1)0x03;
 
     // setting common
     u4s_counter                 = (u4)0x00000000;
@@ -477,7 +483,7 @@ void loop()
     // 10 ms スケジューラ
     if (isElapsed10ms()) {
         
-         // 心拍数の送信
+        // 心拍数の送信
         hearRateSendManager();
     }
 
@@ -710,16 +716,24 @@ void displayManager()
                 printEfont("今日も私を楽しませてね！", 30, 16*1, 1);
             } else if (u1s_messageNumber < (u1)0x70) {
                 printEfont("次は", 30, 16*1, 1);
-                printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 1);
-                printEfont("の話をしたいな！", 30, 16*5, 1);
+                printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 2);
+                printEfont("の話をしたいな！", 30, 16*9, 1);
+                
+            } else if (u1s_messageNumber == (u1)0xFC) {
+                printEfont("課金してください。", 30, 16*1, 1);
+                M5.Lcd.qrcode("課金してください", 50,50, 160, 6);
+                
             } else if (u1s_messageNumber == (u1)0xFD) {
-                printEfont("ちょっと待ってね。",       30, 16*1, 1);
+                printEfont("ちょっと待ってね。",  30, 16*1, 1);
                 printEfont("準備中だよ(^_-)-☆", 30, 16*3, 1);
+                
             } else if (u1s_messageNumber == (u1)0xFE) {
                 printEfont("お待たせ！",       30, 16*1, 1);
                 printEfont("準備できたよ(^^♪", 30, 16*3, 1);
+                
             } else if (u1s_messageNumber == (u1)0xFF) {
-                printEfont("楽しすぎて心拍停止中…",       30, 16*1, 1);
+                printEfont("楽しすぎて心拍停止中…", 30, 16*1, 1);
+                
             } else {
                 printEfont("もうアナタと話したくない (-_-メ)", 30, 16*1, 1);
             }
@@ -734,11 +748,16 @@ void displayManager()
         if (u1s_isChangedDisplayMode) {
 
             M5.Lcd.clear(BLACK);
+
+            char str1[50] = "残り ";
+            char str2[40] = "回まで無料で覗けます。";
+            strcat(str1, COUNT_MESSAGE_ARRAY[u1s_confirmableCountOfAvatar]);
+            strcat(str1, str2);
             
-            printEfont("心の中を覗きますか？",          30, 16*1, 1);
-            printEfont("残り 3回 まで無料で覗けます。",  30, 16*3, 1);
-            printEfont("A：覗く",                    40, 16*5, 1);
-            printEfont("C：後ろめたいが覗く",          40, 16*7, 1);
+            printEfont("心の中を覗きますか？",  30, 16*1, 1);
+            printEfont(str1,                30, 16*3, 1);
+            printEfont("A：覗く",            40, 16*5, 1);
+            printEfont("C：後ろめたいが覗く",  40, 16*7, 1);
 
             u1s_isChangedDisplayMode = false;
         }
@@ -752,6 +771,8 @@ void displayManager()
             } else {
                 avatar.start();
             }
+
+            u1s_confirmableCountOfAvatar = u1s_confirmableCountOfAvatar != 0 ? --u1s_confirmableCountOfAvatar : 0;
 
             // TODO
             avatar.setExpression(expressions[u1s_expressionMode]);
@@ -802,8 +823,16 @@ void buttonManager()
     // ボタン A を離した時
     if (M5.BtnA.wasReleased()) {
 
-        u1s_displayMode = u1s_displayMode == (u1)DISPLAY_MODE_MESSAGE    ? (u1)DISPLAY_MODE_PRE_AVATAR
-                        : u1s_displayMode == (u1)DISPLAY_MODE_PRE_AVATAR ? (u1)DISPLAY_MODE_AVATAR : (u1)DISPLAY_MODE_MESSAGE;
+        // 残り回数がなく、AVATAR MODE に遷移できない場合
+        if (u1s_displayMode == DISPLAY_MODE_PRE_AVATAR && u1s_confirmableCountOfAvatar == (u1)0x00) {
+            setMessageNumber(0xFC);
+            u1s_displayMode = (u1)DISPLAY_MODE_MESSAGE;
+            
+        } else {
+            u1s_displayMode = u1s_displayMode == (u1)DISPLAY_MODE_MESSAGE    ? (u1)DISPLAY_MODE_PRE_AVATAR
+                            : u1s_displayMode == (u1)DISPLAY_MODE_PRE_AVATAR ? (u1)DISPLAY_MODE_AVATAR : (u1)DISPLAY_MODE_MESSAGE;
+            
+        }
 
         u1s_isChangedDisplayMode = true;
     
@@ -828,7 +857,7 @@ void buttonManager()
             u1s_isChangedDisplayMode = true;
 
             // ボタン C の時は、常に angry とする
-            u1s_expressionMode = 4;
+            u1s_expressionMode = 0x04;
         }
         
     // ボタン C を 1000ms 以上長押しした時
@@ -914,6 +943,29 @@ static void parseReceveData(u1 u1t_rcvData)
             if (u4s_heartRateInterval == (u4)0xFFFFFFFF) {
                 setMessageNumber(0xFF);
             }
+
+            // ------------------------------------------------------------------------------------------
+            // ■■■アバターの表情を設定する■■■
+
+            // 心拍が "とても低い" 場合
+            if (u1t_rcvData < 0x02) {
+                u1s_expressionMode = 0x00;      // 眠い
+
+            // 心拍が "低い" 場合
+            } else if (u1t_rcvData < 0x03) {
+                u1s_expressionMode = 0x01;      // 悲しい
+
+            // 心拍が "正常" の場合
+            } else if (u1t_rcvData < 0x05) {
+                u1s_expressionMode = 0x02;      // 普通
+
+            // 心拍が "高い" 場合
+            } else {
+                u1s_expressionMode = 0x03;      // 嬉しい
+            }
+
+            // u1s_expressionMode = u1t_rcvData < expressionsSize ? u1t_rcvData - 1 : expressionsSize - 1;
+            // ------------------------------------------------------------------------------------------
             
         // 心拍数を bpm で取得する場合
         } else {
@@ -923,14 +975,7 @@ static void parseReceveData(u1 u1t_rcvData)
                 // bpm から 1回あたりの心拍の時間(ms) を取得
                 u4s_heartRateInterval = 600000 / u1t_rcvData;
             }
-        }
-
-        // Serial.print("interval: ");
-        // Serial.print(u4s_heartRateInterval);
-        // Serial.println("(ms)");
-
-        // とりあえず、心拍の mode と同じ値を expression の mode に格納する
-        u1s_expressionMode = u1t_rcvData < expressionsSize ? u1t_rcvData - 1 : expressionsSize - 1;
+        }        
 
     // message data の場合
     } else if (u1t_rcvData <= 0xEF) {
