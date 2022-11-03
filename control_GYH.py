@@ -150,27 +150,28 @@ class hr_device():
         else:
             try:
                 self.target.write(data_tobe_send)
-                # print(data_8bit)
+                # print('send_8bit_data', format(data_tobe_send[0], 'x'))
             except:
                 pass
 
-    def send_8bit_message(self, data_8bit):
+    def send_8bit_message(self, message_8bit):
         '''# send_bpm_v2
 
-            GYHデバイスへ8ビットデータを送信する関数
-            ACKが返ってこない場合はリトライする
+            GYHデバイスへメッセージを送信する関数
+            
 
         Args:
-            beat_per_min, int   , 1分間当たりの鼓動回数\n
+            message_8bit, int   , 送信する8ビットメッセージ番号\n
         '''
-        data_tobe_send = [data_8bit & 0xff]
+        data_tobe_send = [message_8bit & 0xff]
         if self.debug_mode:
             print('debug mode: write -> ' + str(data_tobe_send))
         else:
             try:
-                for i in range(3):
+                # 受信エラー回避のため念のため２回送信する
+                for i in range(2):
                     self.target.write(data_tobe_send)
-                    time.sleep(0.1)
+                    time.sleep(0.2)
                 # print(data_8bit)
             except:
                 pass

@@ -26,7 +26,6 @@ import tkinter.font as font
 from tkinter import ttk
 from tkinter import messagebox
 from statistics import variance
-import random
 
 import control_GYH as GYH
 import topic_generator as tpg
@@ -34,11 +33,16 @@ import topic_generator as tpg
 port_left = 'COM6'
 port_right = 'COM3'
 
-LEFT_ONLY     = True
-RIGHT_OBSERV = True
-BPM_CHANGE_RATE = 0.05 #[%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
+LEFT_ONLY     = True     # 左側に接続されたGYHデバイスのみを使う
+RIGHT_OBSERV = True      # 右側に接続されたGYHデバイスが傍観者モードになる
+BPM_CHANGE_RATE = 0.05   # [%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
+IR_SEND_RATE = 10        # 心拍送信周期。心拍送信周期の入力が必要なパラメータに使用する
+ENABLE_MAX_HEART = False # 心拍レベルが最大(10)の時に、特別なメッセージを表示させる
 
+
+# グローバル変数、基本的にいじらない
 message_offset = 0x0e
+max_heart_message = 0xfe
 
 class grabYourHeart():
     '''# class grabYourHeart
@@ -52,6 +56,8 @@ class grabYourHeart():
         baud_rate            , int       , [Hz] ボーレート（デフォルト : 115200）\n
         timeout              , int       , [sec] UART通信のタイムアウト時間（デフォルト : 1）\n
         debug_mode           , bool      , 接続するデバイスをデバッグモードにするかどうか（デフォルト : False）\n
+
+        IR_SEND_RATE         , int       , 心拍送信周期。心拍送信周期の入力が必要なパラメータに使用する
 
         # 測定用のパラメータ\n
         IR_SIGNAL_THRESH     , int       , [a.u.] この値以下のデータは無視する（反射光が十分な強度でないと指が接触していない）\n
@@ -83,7 +89,7 @@ class grabYourHeart():
         self.myGYHdevice = GYH.hr_device(port, baud_rate, debug_mode = debug_mode)
 
         # 心拍送信周期
-        self.send_rate = 100 # [Hz]
+        self.IR_SEND_RATE = IR_SEND_RATE # [Hz]
         
         # measurement_processメソッドのパラメータ
         self.IR_SIGNAL_THRESH       = 30000 
@@ -126,10 +132,10 @@ class grabYourHeart():
             self.myGYHdevice.read_data()
 
         thresh_error_counter = 0
-        erase_data_length_num      = self.ERASE_DATA_LENGTH * 100
-        data_list_max_length_num   = self.DATA_LIST_MAX_LENGTH * 100
-        finger_find_length_num     = self.FINGER_FIND_LENGTH * 100
-        finger_find_rength_pre_num = self.FINGER_FIND_LENGTH_PRE * 100
+        erase_data_length_num      = self.ERASE_DATA_LENGTH * self.IR_SEND_RATE # 線形補完と無関係なパラメータに使うため、送信周期が必要
+        data_list_max_length_num   = self.DATA_LIST_MAX_LENGTH * 100     # 100[Hz] 送信周期が長くても線形補完するから定数で良い
+        finger_find_length_num     = self.FINGER_FIND_LENGTH * 100       # 100[Hz] 送信周期が長くても線形補完するから定数で良い
+        finger_find_rength_pre_num = self.FINGER_FIND_LENGTH_PRE * 100   # 100[Hz] 送信周期が長くても線形補完するから定数で良い
 
         counter_prev = None
 
@@ -161,7 +167,7 @@ class grabYourHeart():
 
                     # データに抜けがあるとき
                     elif dt > 2:
-                        print('comp')
+                        # print('comp')
                         # 線形補完したデータを追加
                         for i in range(dt):
                             ir_data_comp = ((ir_prev - ir_temp) / dt) * i + ir_prev
@@ -194,13 +200,13 @@ class grabYourHeart():
                     self.finger_find_pre_flag = False
                     
                 # 指が接触してからある長さ（finger_find_rength_pre_num）までデータがたまったら、ノイズが多い最初のデータは破棄する
-                if len(self.ir_data_list) == finger_find_rength_pre_num and self.finger_find_pre_flag == False:
+                if len(self.ir_data_list) >= finger_find_rength_pre_num and self.finger_find_pre_flag == False:
                     print(self.port + ' finger founded pre')
                     self.finger_find_pre_flag = True
                     self.ir_data_list = []
 
                 # 指が接触し、最初のデータ破棄後に、ある長さ（finger_find_length_num）までデータがたまったら、指が定位置にあり正しく測定できているとみなす
-                if len(self.ir_data_list) == finger_find_length_num and self.finger_find_pre_flag == True:
+                if len(self.ir_data_list) >= finger_find_length_num and self.finger_find_pre_flag == True and self.finger_find_flag == False:
                     print(self.port + ' finger founded')
                     self.finger_find_flag = True
 
@@ -241,8 +247,8 @@ class grabYourHeart():
                 # ピークをカウントするライブラリを使う
                 self.peaks, _ = find_peaks(data_tobe_processed, prominence=(self.PROMINANCE_LOW, None), distance = self.DISTANCE)
 
-                data_length_sec =  round(len(self.ir_data_list) / 100)
-                bpm_current = round((len(self.peaks)  * 60 ) / data_length_sec)
+                data_length_sec =  round(len(self.ir_data_list) / 100)          # 0.01[sec]周期, 送信周期が長くても線形補完するから定数で良い
+                bpm_current = round((len(self.peaks)  * 60 ) / data_length_sec) # 60  [sec]
 
                 # 過去値を3点の平均値をbeat per minutesとして出力
                 bpm_temp = int((bpm_current + bpm_prev1 + bpm_prev2)/3)
@@ -346,6 +352,15 @@ def interact_GYH_process():
 
                 time.sleep(1)
 
+                # 心拍がMAXになったら
+                if level_l == 10 and ENABLE_MAX_HEART:
+                    # Left側だけモードの場合は、Left側の心拍値からLeft側トピックを生成する
+                    if LEFT_ONLY:
+                        grabYourHeart_left.myGYHdevice.send_8bit_message(max_heart_message)
+                    # 通常はRightのGYHデバイスにbpm変化レベルを送信する
+                    else:
+                        grabYourHeart_right.myGYHdevice.send_8bit_message(max_heart_message)
+
             # Left側ボタンが押されたらLeft側トピックを生成する
             if grabYourHeart_left.button_push_counter != button_push_counter_prev_l and bpm_base_l != None:
 
@@ -432,6 +447,10 @@ def interact_GYH_process():
                 level_max_r = max(level_max_r, level_r)
 
                 time.sleep(1)
+
+                # 心拍がMAXになったら
+                if level_r == 10 and ENABLE_MAX_HEART:
+                    grabYourHeart_left.myGYHdevice.send_8bit_message(max_heart_message)
 
             # Rightg側ボタンが押されたらRight側トピックを生成する
             if grabYourHeart_right.button_push_counter != button_push_counter_prev_r and bpm_base_r != None:

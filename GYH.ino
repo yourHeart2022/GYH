@@ -484,11 +484,12 @@ void loop()
     if (isElapsed10ms()) {
         
         // 心拍数の送信
-        hearRateSendManager();
+//        hearRateSendManager(); //TODO:コメントアウト外す
     }
 
     // 100 ms スケジューラ
     if (isElapsed100ms()) {
+        hearRateSendManager(); //TODO:消す
 
         // ディスプレイの制御
         displayManager();
