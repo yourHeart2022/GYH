@@ -185,11 +185,12 @@ if __name__ == '__main__':
     # SAMPLING_RATE = 100        #Hz
     # SAMPLING_SEC  = 10         #sec
 
-    port = "COM3"
+    port = "COM6"
     myHRdevice = hr_device(port, 115200)
     myHRdevice.connect()
 
-    myHRdevice.send_8bit_data(0x01)
+    myHRdevice.send_8bit_data(0x11)
+    time.sleep(5)
 
     # # 現在の時刻でファイル名を作る
     # now = datetime.datetime.now()

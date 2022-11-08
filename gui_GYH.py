@@ -1,15 +1,9 @@
-"""monitor_heartrate_2device
+"""gui_GYH
 
     接続された2台の心臓デバイスから光センサ値を読みとり、
     心拍数を推定して表示するプログラム
 
-Todo:
-    1.interact_GYH_process()関数の記述
-      心拍データの基準値から10段階化してGYHデバイスに送信する機能
-      ボタンが押されたときに、メッセージ番号を送信する機能
-      そのとき、メッセージ番号と心拍変化をログする機能
-    
-    2.心拍変動値から、メッセージをチューニングする 
+
 """
 import time
 import sys
@@ -26,18 +20,19 @@ import tkinter.font as font
 from tkinter import ttk
 from tkinter import messagebox
 from statistics import variance
+from playsound import playsound
 
 import control_GYH as GYH
 import topic_generator as tpg
 
-port_left = 'COM6'
-port_right = 'COM3'
+port_left = 'COM3'
+port_right = 'COM4'
 
 LEFT_ONLY     = True     # 左側に接続されたGYHデバイスのみを使う
 RIGHT_OBSERV = True      # 右側に接続されたGYHデバイスが傍観者モードになる
 BPM_CHANGE_RATE = 0.05   # [%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 IR_SEND_RATE = 10        # 心拍送信周期。心拍送信周期の入力が必要なパラメータに使用する
-ENABLE_MAX_HEART = False # 心拍レベルが最大(10)の時に、特別なメッセージを表示させる
+ENABLE_MAX_HEART = True # 心拍レベルが最大(10)の時に、特別なメッセージを表示させる
 
 
 # グローバル変数、基本的にいじらない
@@ -360,6 +355,7 @@ def interact_GYH_process():
                     # 通常はRightのGYHデバイスにbpm変化レベルを送信する
                     else:
                         grabYourHeart_right.myGYHdevice.send_8bit_message(max_heart_message)
+                    playsound('extra/sound/Mendelssohn_WeddingMarch_short.mp3')
 
             # Left側ボタンが押されたらLeft側トピックを生成する
             if grabYourHeart_left.button_push_counter != button_push_counter_prev_l and bpm_base_l != None:
@@ -397,9 +393,11 @@ def interact_GYH_process():
             # 手が見つかっていないことをGYHデバイスに知らせる
             if LEFT_ONLY:
                 grabYourHeart_left.myGYHdevice.send_8bit_data(0)
+                grabYourHeart_left.myGYHdevice.send_8bit_data(0xf0)
             # 通常はRight側のGYHデバイスに送信する
             else:
                 grabYourHeart_right.myGYHdevice.send_8bit_data(0)
+                grabYourHeart_right.myGYHdevice.send_8bit_data(0xf0)
             
             bpm_base_l      = None
             level_max_l     = None
@@ -474,6 +472,7 @@ def interact_GYH_process():
             # 手が見つかっていないことをleft側GYHデバイスに知らせる
             else:
                 grabYourHeart_left.myGYHdevice.send_8bit_data(0)
+                grabYourHeart_left.myGYHdevice.send_8bit_data(0xf0)
             
             bpm_base_r      = None
             level_max_r     = None
