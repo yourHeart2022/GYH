@@ -52,6 +52,15 @@ typedef float           pl;
 // 1:device で算出した bpm                を取得する
 #define HEARTRATE_ACTIVE_MODE_SW    0
 
+// Heart Rate の送信タイミングを切り替えるスイッチ
+// 0:  10ms 間隔
+// 1: 100ms 間隔
+// 2:1000ms 間隔
+#define INTERVAL_10ms               0
+#define INTERVAL_100ms              1
+#define INTERVAL_1000ms             2
+#define HEARTRATE_SEND_TIMING_SW    INTERVAL_100ms
+
 // シリアルデータの受信モードを切り替えるスイッチ
 // 0:バイナリ値で取得する
 // 1:ASCII値で取得する (シリアルモニタからデータを送る場合は "1" を設定する)
@@ -280,6 +289,7 @@ void setup_M5Stack();
 void setup_heartRateSensor();
 void setup_wifi();
 void IRAM_ATTR timer_callback();
+void prepareHeartRate();
 void hearRateSendManager();
 void serialReceiveManager();
 void hearRateManager();
@@ -311,7 +321,7 @@ void setup()
     // setting timer1
     timer1 = timerBegin(1, 80, true);       // LSB 1us
     timerAttachInterrupt(timer1, &timer_callback, true);
-    timerAlarmWrite(timer1, 1000, true); // 100us = 1ms,  1000000us = 1s
+    timerAlarmWrite(timer1, 1000, true);    // 100us = 1ms,  1000000us = 1s
     timerAlarmEnable(timer1);    
 
     // setting GPIO
@@ -480,17 +490,28 @@ void loop()
     // 心拍数からモーターを制御
     hearRateManager();
 
+    // 心拍数を送信する前準備
+    prepareHeartRate();
+
     // 10 ms スケジューラ
     if (isElapsed10ms()) {
         
-        // 心拍数の送信
-//        hearRateSendManager(); //TODO:コメントアウト外す
+        if (HEARTRATE_SEND_TIMING_SW == INTERVAL_10ms) {
+            
+            // 心拍数の送信
+            hearRateSendManager();
+        }
     }
 
     // 100 ms スケジューラ
     if (isElapsed100ms()) {
-        hearRateSendManager(); //TODO:消す
-
+        
+        if (HEARTRATE_SEND_TIMING_SW == INTERVAL_100ms) {
+            
+            // 心拍数の送信
+            hearRateSendManager();
+        }
+        
         // ディスプレイの制御
         displayManager();
 
@@ -501,6 +522,11 @@ void loop()
     // 1000 ms スケジューラ
     if (isElapsed1000ms()) {
 
+        if (HEARTRATE_SEND_TIMING_SW == INTERVAL_1000ms) {
+            
+            // 心拍数の送信
+            hearRateSendManager();
+        }
     }
 }
 
@@ -527,6 +553,31 @@ void IRAM_ATTR timer_callback()
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 
 /**
+ * 心拍数を取得する前準備
+ */
+void prepareHeartRate()
+{
+    // Heart Rate Device の初期化が成功した場合
+    if (u1s_isInitHeartRateSensor) {
+
+        // Heart Rate Device から センサ値 を取得する場合
+        if (HEARTRATE_ACTIVE_MODE_SW == 0) {
+
+            // Make sure to call update as fast as possible
+            // (If you don't run at the fast, you will always get "0" output.)
+            heartRateSensor.update();
+
+        // Heart Rate Device から bpm を取得する場合
+        } else {
+
+            // Make sure to call update as fast as possible
+            // (If you don't run at the fast, you will always get "0" output.)
+            pulseOximeter.update();
+        }
+    }
+}
+
+/**
  * 心拍数の送信を制御
  * 
  */
@@ -540,7 +591,7 @@ void hearRateSendManager()
             
             // Make sure to call update as fast as possible
             // (If you don't run at the fast, you will always get "0" output.)
-            heartRateSensor.update();
+            // heartRateSensor.update();
 
             // ir：***** と red：***** を取得する
             u2 u2t_ir, u2t_red;
@@ -563,7 +614,7 @@ void hearRateSendManager()
             
             // Make sure to call update as fast as possible
             // (If you don't run at the fast, you will always get "0" output.)
-            pulseOximeter.update();
+            // pulseOximeter.update();
 
             Serial.print("Heart rate:");
             Serial.print(pulseOximeter.getHeartRate());
