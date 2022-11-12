@@ -55,7 +55,7 @@ typedef float           pl;
 // シリアルデータの受信モードを切り替えるスイッチ
 // 0:バイナリ値で取得する
 // 1:ASCII値で取得する (シリアルモニタからデータを送る場合は "1" を設定する)
-#define SERIAL_RECEIVE_MODE_SW   0
+#define SERIAL_RECEIVE_MODE_SW   1
 
 // HEARTRATE_ACTIVE_MODE_SW = 0 (センサ値の取得) で動作させるためのマクロを定義 -------------------------------
 // Sampling is tightly related to the dynamic range of the ADC. refer to the datasheet for further info
@@ -89,10 +89,10 @@ const u4 cu4_HEART_RATE_BEAT_ARRAY[3][2] = {
                                 {0x00011170 /* 70ms   */, (u4)HIGH}};
 
 const u4 cu4_HEART_RATE_INTERVAL_ARRAY[16] = {
-                                0x000F4240, /* 1000ms */  0x000CF850, /* 850ms */   0x000AAE60, /*  700ms */
+                                0x000F4240, /* 1000ms */  0x000CF850, /*  850ms */  0x000AAE60, /*  700ms */
                                 0x0007A120, /*  500ms */  0x00061A80, /*  400ms */  0x000493E0, /*  300ms */
-                                0x00030D40, /*  200ms */  0x000186A0, /*  100ms */  0x0000C350, /*   50ms */
-                                0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */
+                                0x00030D40, /*  200ms */  0x000249F0, /*  150ms */  0x000186A0, /*  100ms */
+                                0x0000C350, /*   50ms */  0x00002710, /*   10ms */  0xFFFFFFFF, /* ****ms */
                                 0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */  0xFFFFFFFF, /* ****ms */
                                 0xFFFFFFFF  /* ****ms */};
 
@@ -743,7 +743,7 @@ void displayManager()
             u1s_isChangedDisplayMode = false;
         }
         
-    // メッセージを表示
+    // アバター表示前のメッセージを表示
     } else if (u1s_displayMode == (u1)DISPLAY_MODE_PRE_AVATAR) {
 
         if (u1s_isChangedDisplayMode) {
