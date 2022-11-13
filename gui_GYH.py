@@ -21,6 +21,7 @@ from tkinter import ttk
 from tkinter import messagebox
 from statistics import variance
 from playsound import playsound
+from PIL import Image
 
 import control_GYH as GYH
 import topic_generator as tpg
@@ -38,6 +39,11 @@ ENABLE_MAX_HEART = True # 心拍レベルが最大(10)の時に、特別なメ�
 # グローバル変数、基本的にいじらない
 message_offset = 0x0e
 max_heart_message = 0xfe
+
+# 婚姻届け
+filename = "extra/picture/konintodoke.jpg"
+if ENABLE_MAX_HEART:
+    imgPIL = Image.open(filename)
 
 class grabYourHeart():
     '''# class grabYourHeart
@@ -355,6 +361,7 @@ def interact_GYH_process():
                     # 通常はRightのGYHデバイスにbpm変化レベルを送信する
                     else:
                         grabYourHeart_right.myGYHdevice.send_8bit_message(max_heart_message)
+                    imgPIL.show()
                     playsound('extra/sound/Mendelssohn_WeddingMarch_short.mp3')
 
             # Left側ボタンが押されたらLeft側トピックを生成する
@@ -468,6 +475,7 @@ def interact_GYH_process():
 
         else:
             if LEFT_ONLY:
+                # imgPIL.show()
                 pass
             # 手が見つかっていないことをleft側GYHデバイスに知らせる
             else:
