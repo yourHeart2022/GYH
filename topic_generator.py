@@ -107,7 +107,7 @@ class topicGenerator():
         '89' : [110, 111, 112],
     }
 
-    def __init__(self):
+    def __init__(self, first_topic_num = None):
         self.topic_list_root  = copy.deepcopy(self.TOPIC_LIST_ROOT)
         self.topic_dict_rel   = copy.deepcopy(self.TOPIC_DICT_RELATIONSHIP)
         self.topic_used_list  = []    
@@ -115,6 +115,7 @@ class topicGenerator():
         self.topic_prev       = None
         self.gen_counter      = 0
         self.root_flag        = False
+        self.first_topic_num  = first_topic_num
 
     def get_topic(self, topic_result):
         '''# get_topic
@@ -134,7 +135,11 @@ class topicGenerator():
             # 最初に呼ばれたときの処理
             if self.topic_current == None:
                 self.root_flag = True
-                topic = random.choice(self.topic_list_root)
+                if self.first_topic_num != None and self.first_topic_num <= 30:
+                    topic = self.topic_list_root[self.first_topic_num]
+                else:
+                    topic = random.choice(self.topic_list_root)
+                    
                 self.topic_list_root.remove(topic)
 
                 self.topic_current = topic
@@ -331,20 +336,12 @@ TOPIC_TO_NAME = {
 }
 
 if __name__ == '__main__':
-    import collections
+    myTopicGen = topicGenerator(first_topic_num = 28)
 
-    myTopicGen = topicGenerator()
-    topic_list = []
+    # 最初のトピック
+    print('first ', TOPIC_TO_NAME[str(myTopicGen.get_topic(1))])
 
-    while True:
-        res = myTopicGen.gen_counter, myTopicGen.get_topic(1)
-        if res[1] == None:
-            break
-
-        # print(res, '        ',  myTopicGen.topic_list_root)
-        print(TOPIC_TO_NAME[str(res[1])])
-        topic_list.append(res[1])
-
-    print(collections.Counter(topic_list))
-
-    #       2. トピック番号からトピック名に変換し、大体いい感じに話題が振れているか見てみる
+    print('prev fun ', TOPIC_TO_NAME[str(myTopicGen.get_topic(1))])
+    print('prev fun ', TOPIC_TO_NAME[str(myTopicGen.get_topic(1))])
+    print('prev soso ', TOPIC_TO_NAME[str(myTopicGen.get_topic(0))])
+    print('prev soso', TOPIC_TO_NAME[str(myTopicGen.get_topic(0))])

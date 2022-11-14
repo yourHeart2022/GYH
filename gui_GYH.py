@@ -26,10 +26,10 @@ from PIL import Image
 import control_GYH as GYH
 import topic_generator as tpg
 
-port_left = 'COM3'
-port_right = 'COM4'
+port_left = 'COM6'
+port_right = 'COM3'
 
-LEFT_ONLY     = True     # 左側に接続されたGYHデバイスのみを使う
+LEFT_ONLY     = False     # 左側に接続されたGYHデバイスのみを使う
 RIGHT_OBSERV = True      # 右側に接続されたGYHデバイスが傍観者モードになる
 BPM_CHANGE_RATE = 0.05   # [%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 IR_SEND_RATE = 10        # 心拍送信周期。心拍送信周期の入力が必要なパラメータに使用する
@@ -102,7 +102,7 @@ class grabYourHeart():
         # calc_bpm_processメソッドのパラメータ
         self.USE_FFT         = False
         self.DISTANCE        = 33                 
-        self.PROMINANCE_LOW  = 500          
+        self.PROMINANCE_LOW  = 800          
         self.DATA_LIST_CALC_LENGTH = 10
         self.STABLE_VARIANCE     = 1.5
         self.STABLE_JUDGE_LENGTH = 5       #[sec]
@@ -329,9 +329,11 @@ def interact_GYH_process():
 
                 # Left側の最初のトピックを生成
                 topicgen_l = tpg.topicGenerator()
-                topic_l = topicgen_l.get_topic(0)
-                print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
-                grabYourHeart_left.myGYHdevice.send_8bit_message(topic_l + message_offset)
+                if bpm_base_r != None:
+                    topic_l = topicgen_l.get_topic(0)
+                    print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
+                
+                    grabYourHeart_left.myGYHdevice.send_8bit_message(topic_l + message_offset)
                 time.sleep(1)
 
             # Left側が安定になった後の心拍値の処理

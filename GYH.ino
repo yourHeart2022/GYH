@@ -64,7 +64,7 @@ typedef float           pl;
 // シリアルデータの受信モードを切り替えるスイッチ
 // 0:バイナリ値で取得する
 // 1:ASCII値で取得する (シリアルモニタからデータを送る場合は "1" を設定する)
-#define SERIAL_RECEIVE_MODE_SW   1
+#define SERIAL_RECEIVE_MODE_SW   0
 
 // HEARTRATE_ACTIVE_MODE_SW = 0 (センサ値の取得) で動作させるためのマクロを定義 -------------------------------
 // Sampling is tightly related to the dynamic range of the ADC. refer to the datasheet for further info
