@@ -21,14 +21,15 @@ from tkinter import ttk
 from tkinter import messagebox
 from statistics import variance
 from playsound import playsound
+from PIL import Image
 
 import control_GYH as GYH
 import topic_generator as tpg
 
-port_left = 'COM3'
-port_right = 'COM4'
+port_left = 'COM6'
+port_right = 'COM3'
 
-LEFT_ONLY     = True     # 左側に接続されたGYHデバイスのみを使う
+LEFT_ONLY     = False     # 左側に接続されたGYHデバイスのみを使う
 RIGHT_OBSERV = True      # 右側に接続されたGYHデバイスが傍観者モードになる
 BPM_CHANGE_RATE = 0.05   # [%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 IR_SEND_RATE = 10        # 心拍送信周期。心拍送信周期の入力が必要なパラメータに使用する
@@ -38,6 +39,11 @@ ENABLE_MAX_HEART = True # 心拍レベルが最大(10)の時に、特別なメ�
 # グローバル変数、基本的にいじらない
 message_offset = 0x0e
 max_heart_message = 0xfe
+
+# 婚姻届け
+filename = "extra/picture/konintodoke.jpg"
+if ENABLE_MAX_HEART:
+    imgPIL = Image.open(filename)
 
 class grabYourHeart():
     '''# class grabYourHeart
@@ -96,7 +102,7 @@ class grabYourHeart():
         # calc_bpm_processメソッドのパラメータ
         self.USE_FFT         = False
         self.DISTANCE        = 33                 
-        self.PROMINANCE_LOW  = 500          
+        self.PROMINANCE_LOW  = 800          
         self.DATA_LIST_CALC_LENGTH = 10
         self.STABLE_VARIANCE     = 1.5
         self.STABLE_JUDGE_LENGTH = 5       #[sec]
@@ -323,9 +329,11 @@ def interact_GYH_process():
 
                 # Left側の最初のトピックを生成
                 topicgen_l = tpg.topicGenerator()
-                topic_l = topicgen_l.get_topic(0)
-                print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
-                grabYourHeart_left.myGYHdevice.send_8bit_message(topic_l + message_offset)
+                if bpm_base_r != None:
+                    topic_l = topicgen_l.get_topic(0)
+                    print('@ left GYH ', tpg.TOPIC_TO_NAME[str(topic_l)])
+                
+                    grabYourHeart_left.myGYHdevice.send_8bit_message(topic_l + message_offset)
                 time.sleep(1)
 
             # Left側が安定になった後の心拍値の処理
@@ -355,6 +363,7 @@ def interact_GYH_process():
                     # 通常はRightのGYHデバイスにbpm変化レベルを送信する
                     else:
                         grabYourHeart_right.myGYHdevice.send_8bit_message(max_heart_message)
+                    imgPIL.show()
                     playsound('extra/sound/Mendelssohn_WeddingMarch_short.mp3')
 
             # Left側ボタンが押されたらLeft側トピックを生成する
@@ -468,6 +477,7 @@ def interact_GYH_process():
 
         else:
             if LEFT_ONLY:
+                # imgPIL.show()
                 pass
             # 手が見つかっていないことをleft側GYHデバイスに知らせる
             else:
