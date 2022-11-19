@@ -64,7 +64,7 @@ typedef float           pl;
 // シリアルデータの受信モードを切り替えるスイッチ
 // 0:バイナリ値で取得する
 // 1:ASCII値で取得する (シリアルモニタからデータを送る場合は "1" を設定する)
-#define SERIAL_RECEIVE_MODE_SW   1
+#define SERIAL_RECEIVE_MODE_SW   0
 
 // HEARTRATE_ACTIVE_MODE_SW = 0 (センサ値の取得) で動作させるためのマクロを定義 -------------------------------
 // Sampling is tightly related to the dynamic range of the ADC. refer to the datasheet for further info
@@ -770,6 +770,11 @@ void displayManager()
                 printEfont("次は", 30, 16*1, 1);
                 printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 2);
                 printEfont("の話をしたいな！", 30, 16*9, 1);
+
+            } else if (u1s_messageNumber == (u1)0xF0) {
+                printEfont("次は", 30, 16*1, 1);
+                printEfont("[将来]", 50, 16*3, 2);
+                printEfont("の話をしたいな・・・", 30, 16*9, 1);
                 
             } else if (u1s_messageNumber == (u1)0xFC) {
                 printEfont("課金してください。", 30, 16*1, 1);
@@ -1034,13 +1039,16 @@ static void parseReceveData(u1 u1t_rcvData)
 
         setMessageNumber(u1t_rcvData - 0x10 + 0x01);
 
-        //Serial.print(0x0001);
-        //Serial.print(",");
-        //Serial.println(0x0000);
+    // special message data の場合
+    } else if (u1t_rcvData == 0xF0) {
+
+        setMessageNumber(u1t_rcvData);
 
     // reserve data の場合
     } else {
-        // Serial.println("receive data");
+        
+        // 0xFC ~ 0xFF は使用中
+        
     }
 }
 
