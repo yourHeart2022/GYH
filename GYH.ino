@@ -776,6 +776,10 @@ void displayManager()
                 printEfont("[将来]", 50, 16*3, 2);
                 printEfont("の話をしたいな・・・", 30, 16*9, 1);
                 
+            } else if (u1s_messageNumber == (u1)0xF1) {
+                printEfont("課金ありがとう(#^.^#)", 30, 16*1, 1);
+                printEfont("今日も私を楽しませてね！", 30, 16*3, 1);
+
             } else if (u1s_messageNumber == (u1)0xFC) {
                 printEfont("課金してください。", 30, 16*1, 1);
                 M5.Lcd.qrcode("課金してください", 50,50, 160, 6);
@@ -1042,6 +1046,12 @@ static void parseReceveData(u1 u1t_rcvData)
     // special message data の場合
     } else if (u1t_rcvData == 0xF0) {
 
+        setMessageNumber(u1t_rcvData);
+
+    // 課金した場合
+    } else if (u1t_rcvData == 0xF1) {
+
+        u1s_confirmableCountOfAvatar = (u1)0x03;
         setMessageNumber(u1t_rcvData);
 
     // reserve data の場合
