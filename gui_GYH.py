@@ -26,19 +26,24 @@ from PIL import Image
 import control_GYH as GYH
 import topic_generator as tpg
 
-port_left = 'COM6'
-port_right = 'COM3'
+#TODO: 最初のtableが安定しない→分散値を変更する
 
-LEFT_ONLY     = False     # 左側に接続されたGYHデバイスのみを使う
-RIGHT_OBSERV = True      # 右側に接続されたGYHデバイスが傍観者モードになる
+port_left = 'COM3'
+port_right = 'COM6'
+
+LEFT_ONLY       = True     # 左側に接続されたGYHデバイスのみを使う
+RIGHT_OBSERV    = True      # 右側に接続されたGYHデバイスが傍観者モードになる
 BPM_CHANGE_RATE = 0.05   # [%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
-IR_SEND_RATE = 10        # 心拍送信周期。心拍送信周期の入力が必要なパラメータに使用する
+STABLE_VARIANCE = 1.2
+
+# 基本的に変えない設定
+IR_SEND_RATE     = 10        # 心拍送信周期。心拍送信周期の入力が必要なパラメータに使用する
 ENABLE_MAX_HEART = True # 心拍レベルが最大(10)の時に、特別なメッセージを表示させる
 
 
 # グローバル変数、基本的にいじらない
-message_offset = 0x0e
-max_heart_message = 0xfe
+message_offset    = 0x0e
+max_heart_message = 0xf0
 
 # 婚姻届け
 filename = "extra/picture/konintodoke.jpg"
@@ -102,9 +107,9 @@ class grabYourHeart():
         # calc_bpm_processメソッドのパラメータ
         self.USE_FFT         = False
         self.DISTANCE        = 33                 
-        self.PROMINANCE_LOW  = 800          
+        self.PROMINANCE_LOW  = 500          
         self.DATA_LIST_CALC_LENGTH = 10
-        self.STABLE_VARIANCE     = 1.5
+        self.STABLE_VARIANCE     = STABLE_VARIANCE
         self.STABLE_JUDGE_LENGTH = 5       #[sec]
 
         # 他インスタンス変数
@@ -261,7 +266,7 @@ class grabYourHeart():
                 if bpm_temp > 40 and bpm_temp < 150:
                     bpm_list.append(bpm_temp)
                 # bpm値が安定しているかどうか評価
-                if len(bpm_list) > 5:
+                if len(bpm_list) > self.STABLE_JUDGE_LENGTH:
                     bpm_variance = variance(bpm_list)
                     # print(bpm_variance)
                     if bpm_variance < self.STABLE_VARIANCE:
@@ -356,15 +361,19 @@ def interact_GYH_process():
                 time.sleep(1)
 
                 # 心拍がMAXになったら
-                if level_l == 10 and ENABLE_MAX_HEART:
+                if LEFT_ONLY and level_l == 10 and ENABLE_MAX_HEART:
                     # Left側だけモードの場合は、Left側の心拍値からLeft側トピックを生成する
-                    if LEFT_ONLY:
-                        grabYourHeart_left.myGYHdevice.send_8bit_message(max_heart_message)
-                    # 通常はRightのGYHデバイスにbpm変化レベルを送信する
-                    else:
-                        grabYourHeart_right.myGYHdevice.send_8bit_message(max_heart_message)
+                    grabYourHeart_left.myGYHdevice.send_8bit_message(max_heart_message)
                     imgPIL.show()
                     playsound('extra/sound/Mendelssohn_WeddingMarch_short.mp3')
+                # 通常はRightのGYHデバイスにbpm変化レベルを送信する
+                try:
+                    if not LEFT_ONLY and level_r == 10 and ENABLE_MAX_HEART:
+                        grabYourHeart_left.myGYHdevice.send_8bit_message(max_heart_message)
+                        imgPIL.show()
+                        playsound('extra/sound/Mendelssohn_WeddingMarch_short.mp3')
+                except:
+                    pass
 
             # Left側ボタンが押されたらLeft側トピックを生成する
             if grabYourHeart_left.button_push_counter != button_push_counter_prev_l and bpm_base_l != None:
@@ -402,11 +411,9 @@ def interact_GYH_process():
             # 手が見つかっていないことをGYHデバイスに知らせる
             if LEFT_ONLY:
                 grabYourHeart_left.myGYHdevice.send_8bit_data(0)
-                grabYourHeart_left.myGYHdevice.send_8bit_data(0xf0)
             # 通常はRight側のGYHデバイスに送信する
             else:
                 grabYourHeart_right.myGYHdevice.send_8bit_data(0)
-                grabYourHeart_right.myGYHdevice.send_8bit_data(0xf0)
             
             bpm_base_l      = None
             level_max_l     = None
@@ -416,6 +423,7 @@ def interact_GYH_process():
             if topicgen_l != None:
                 del topicgen_l
                 topicgen_l = None
+                grabYourHeart_left.myGYHdevice.send_8bit_data(0xf1)
 
         # ------------------------------------------------------------------------------
         #     Right側のGYHデバイスの処理
@@ -456,7 +464,7 @@ def interact_GYH_process():
                 time.sleep(1)
 
                 # 心拍がMAXになったら
-                if level_r == 10 and ENABLE_MAX_HEART:
+                if not RIGHT_OBSERV and level_l == 10 and ENABLE_MAX_HEART:
                     grabYourHeart_left.myGYHdevice.send_8bit_message(max_heart_message)
 
             # Rightg側ボタンが押されたらRight側トピックを生成する
@@ -482,7 +490,6 @@ def interact_GYH_process():
             # 手が見つかっていないことをleft側GYHデバイスに知らせる
             else:
                 grabYourHeart_left.myGYHdevice.send_8bit_data(0)
-                grabYourHeart_left.myGYHdevice.send_8bit_data(0xf0)
             
             bpm_base_r      = None
             level_max_r     = None
@@ -492,6 +499,7 @@ def interact_GYH_process():
             if topicgen_r != None:
                 del topicgen_r
                 topicgen_r = None
+                grabYourHeart_left.myGYHdevice.send_8bit_data(0xf1)
 
         # 1sec周期
         time.sleep(1)
