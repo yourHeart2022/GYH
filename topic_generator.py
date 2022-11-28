@@ -198,7 +198,7 @@ class topicGenerator():
         '85' : [86, 87],
         '86' : [87],
         '87' : [40, 86],
-        '88' : [89, 193, 194, 195],#, 196, 197, 198, 199, 200],
+        '88' : [89, 194, 195, 196],#, 197, 198, 199, 200],
         '89' : [110, 111, 112],
         '90' : [201, 202, 203],#, 204],
         '91' : [205, 188, 206]#, 207]
@@ -206,7 +206,7 @@ class topicGenerator():
 
     def __init__(self, first_topic_num = None):
         self.topic_list_root  = copy.deepcopy(self.TOPIC_LIST_ROOT)
-        self.topic_dict_rel   = copy.deepcopy(self.TOPIC_DICT_RELATIONSHIP_ORG)
+        self.topic_dict_rel   = copy.deepcopy(self.TOPIC_DICT_RELATIONSHIP)
         self.topic_used_list  = []    
         self.topic_current    = None
         self.topic_prev       = None

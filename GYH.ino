@@ -861,7 +861,7 @@ void displayManager()
     
             if (u1s_messageNumber == (u1)0x00) {
                 printEfont("今日も私を楽しませてね！", 30, 16*1, 1);
-            } else if (u1s_messageNumber < (u1)0x70) {
+            } else if (u1s_messageNumber < (u1)0xD0) {
                 printEfont("次は", 30, 16*1, 1);
                 printEfont(HELP_MESSAGE_ARRAY[u1s_messageNumber], 50, 16*3, 2);
                 printEfont("の話をしたいな！", 30, 16*9, 1);
