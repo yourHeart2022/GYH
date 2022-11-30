@@ -177,6 +177,15 @@ class hr_device():
                 pass
 
 if __name__ == '__main__':
+
+    port = "COM5"
+    myHRdevice = hr_device(port, 115200)
+    myHRdevice.connect()
+
+    topic = 193
+    message_offset    = 0x0e
+    myHRdevice.send_8bit_data(topic + message_offset)
+    time.sleep(10)
     #-----------------------------------------------------
     # IR, Redデータをファイルに保存する時に使用するプログラム
     #-----------------------------------------------------
@@ -184,13 +193,6 @@ if __name__ == '__main__':
 
     # SAMPLING_RATE = 100        #Hz
     # SAMPLING_SEC  = 10         #sec
-
-    port = "COM6"
-    myHRdevice = hr_device(port, 115200)
-    myHRdevice.connect()
-
-    myHRdevice.send_8bit_data(0x11)
-    time.sleep(5)
 
     # # 現在の時刻でファイル名を作る
     # now = datetime.datetime.now()
