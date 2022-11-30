@@ -120,7 +120,7 @@ const int expressionsSize = sizeof(expressions) / sizeof(Expression);
 /* const */ char* COUNT_MESSAGE_ARRAY[4] = {
                                 "0","1","2","3"};
 
-/* const */ char* HELP_MESSAGE_ARRAY[207] = {
+/* const */ char* HELP_MESSAGE_ARRAY[208] = {
                                 "[スポーツ観戦]",
                                 "[筋トレ]",
                                 "[映画鑑賞]",
@@ -314,6 +314,7 @@ const int expressionsSize = sizeof(expressions) / sizeof(Expression);
                                 "[ハンターハンター]",
                                 "[ジョジョ]",
                                 "[キングダム]",
+                                "[ポケモン]",
                                 "[スプラトゥーン]",
                                 "[モンスターハンター]",
                                 "[ドラゴンクエスト]",
