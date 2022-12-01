@@ -21,7 +21,7 @@ from tkinter import ttk
 from tkinter import messagebox
 from statistics import variance
 from playsound import playsound
-from PIL import Image
+from PIL import Image, ImageTk
 
 import control_GYH as GYH
 import topic_generator as tpg
@@ -763,8 +763,9 @@ if __name__ == '__main__':
     nb = ttk.Notebook(width = root_width, height = 440)
     tab1 = tk.Frame(nb)
     tab2 = tk.Frame(nb)
-    nb.add(tab1, text = '1.INIT', padding = 3)
-    nb.add(tab2, text = '2.MAIN', padding = 3)
+    nb.add(tab2, text = 'LOGO', padding = 3)
+    nb.add(tab1, text = 'HEARTRATE', padding = 3)
+    
     nb.pack(expand = 1, fill = 'both')
 
     #buttons
@@ -773,7 +774,17 @@ if __name__ == '__main__':
 
     ##########################################################################################
     # 
-    #      TKinter TAB 1
+    #      TKinter LOGO TAB 
+    #  
+    ##########################################################################################
+    image = Image.open("extra/picture/logo5.jpg")
+    image = ImageTk.PhotoImage(image)
+    label_logo = tk.Label(tab2, image = image)
+    label_logo.pack()
+
+    ##########################################################################################
+    # 
+    #      TKinter HEART RATE TAB
     #  
     ##########################################################################################
     #組み込むグラフを作成 
