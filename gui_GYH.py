@@ -28,10 +28,10 @@ import topic_generator as tpg
 
 #TODO: 最初のtableが安定しない→分散値を変更する
 
-port_left = 'COM3'
-port_right = 'COM6'
+port_left = 'COM6'
+port_right = 'COM3'
 
-LEFT_ONLY       = True     # 左側に接続されたGYHデバイスのみを使う
+LEFT_ONLY       = False     # 左側に接続されたGYHデバイスのみを使う
 RIGHT_OBSERV    = True      # 右側に接続されたGYHデバイスが傍観者モードになる
 BPM_CHANGE_RATE = 0.05   # [%] 心拍レベルの変化率。このパーセンテージ以上変化したら、次のレベルとなる
 STABLE_VARIANCE = 1.2
@@ -107,7 +107,7 @@ class grabYourHeart():
         # calc_bpm_processメソッドのパラメータ
         self.USE_FFT         = False
         self.DISTANCE        = 33                 
-        self.PROMINANCE_LOW  = 500          
+        self.PROMINANCE_LOW  = 300          
         self.DATA_LIST_CALC_LENGTH = 10
         self.STABLE_VARIANCE     = STABLE_VARIANCE
         self.STABLE_JUDGE_LENGTH = 5       #[sec]
@@ -263,7 +263,7 @@ class grabYourHeart():
                 self.bpm  = bpm_temp
 
                 # 一般的な心拍数の範囲に入っているかどうか評価
-                if bpm_temp > 40 and bpm_temp < 150:
+                if bpm_temp > 50 and bpm_temp < 150:
                     bpm_list.append(bpm_temp)
                 # bpm値が安定しているかどうか評価
                 if len(bpm_list) > self.STABLE_JUDGE_LENGTH:
@@ -416,6 +416,7 @@ def interact_GYH_process():
                 grabYourHeart_right.myGYHdevice.send_8bit_data(0)
             
             bpm_base_l      = None
+            level_l         = 0 #2022/12/4
             level_max_l     = None
             level_max_prev_l= None
             
@@ -492,6 +493,7 @@ def interact_GYH_process():
                 grabYourHeart_left.myGYHdevice.send_8bit_data(0)
             
             bpm_base_r      = None
+            level_r         = 0 #2022/12/4
             level_max_r     = None
             level_max_prev_r= None
 

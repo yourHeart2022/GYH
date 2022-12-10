@@ -184,7 +184,8 @@ if __name__ == '__main__':
 
     topic = 193
     message_offset    = 0x0e
-    myHRdevice.send_8bit_data(topic + message_offset)
+    # myHRdevice.send_8bit_data(topic + message_offset)
+    myHRdevice.send_8bit_data(3)
     time.sleep(10)
     #-----------------------------------------------------
     # IR, Redデータをファイルに保存する時に使用するプログラム
